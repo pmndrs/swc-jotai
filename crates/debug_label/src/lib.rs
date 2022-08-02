@@ -1,8 +1,11 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use swc_plugin::{
-    ast::*, metadata::TransformPluginProgramMetadata, plugin_transform, syntax_pos::DUMMY_SP,
-    utils::StmtLike,
+    ast::*,
+    metadata::TransformPluginProgramMetadata,
+    plugin_transform,
+    syntax_pos::DUMMY_SP,
+    utils::{take::Take, StmtLike},
 };
 
 static ATOM_IMPORTS: &[&str] = &[
@@ -37,18 +40,27 @@ impl DebugLabelTransformVisitor {
     fn visit_mut_stmt_like<T>(&mut self, stmts: &mut Vec<T>)
     where
         Vec<T>: VisitMutWith<Self>,
-        T: StmtLike,
+        T: VisitMutWith<Self> + StmtLike,
     {
         stmts.visit_mut_children_with(self);
 
-        if self.debug_label_expr.is_none() {
-            return;
+        let mut stmts_updated: Vec<T> = Vec::with_capacity(stmts.len());
+
+        for mut stmt in stmts.take() {
+            stmt.visit_mut_with(self);
+            stmts_updated.push(stmt);
+
+            if self.debug_label_expr.is_none() {
+                return;
+            }
+
+            stmts_updated.push(T::from_stmt(Stmt::Expr(ExprStmt {
+                span: DUMMY_SP,
+                expr: Box::new(self.debug_label_expr.take().unwrap()),
+            })))
         }
 
-        stmts.push(T::from_stmt(Stmt::Expr(ExprStmt {
-            span: DUMMY_SP,
-            expr: Box::new(self.debug_label_expr.take().unwrap()),
-        })))
+        *stmts = stmts_updated;
     }
 }
 
@@ -148,6 +160,29 @@ mod tests {
         "const countAtom = atom(0);",
         r#"const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";
+        "#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(),
+        exported_atom,
+        "export const countAtom = atom(0);",
+        r#"export const countAtom = atom(0);
+countAtom.debugLabel = "countAtom";
+        "#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(),
+        multiple_atoms,
+        r#"const countAtom = atom(0);
+const doubleAtom = atom((get) => get(countAtom) * 2);"#,
+        r#"const countAtom = atom(0);
+countAtom.debugLabel = "countAtom";
+const doubleAtom = atom((get) => get(countAtom) * 2);
+doubleAtom.debugLabel = "doubleAtom";
         "#
     );
 }
