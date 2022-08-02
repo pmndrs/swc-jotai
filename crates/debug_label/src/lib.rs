@@ -51,7 +51,7 @@ impl DebugLabelTransformVisitor {
             stmts_updated.push(stmt);
 
             if self.debug_label_expr.is_none() {
-                return;
+                continue;
             }
 
             stmts_updated.push(T::from_stmt(Stmt::Expr(ExprStmt {
@@ -181,6 +181,23 @@ countAtom.debugLabel = "countAtom";
 const doubleAtom = atom((get) => get(countAtom) * 2);"#,
         r#"const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";
+const doubleAtom = atom((get) => get(countAtom) * 2);
+doubleAtom.debugLabel = "doubleAtom";
+        "#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(),
+        multiple_atoms_between_code,
+        r#"const countAtom = atom(0);
+let counter = 0;
+const increment = () => ++counter;
+const doubleAtom = atom((get) => get(countAtom) * 2);"#,
+        r#"const countAtom = atom(0);
+countAtom.debugLabel = "countAtom";
+let counter = 0;
+const increment = () => ++counter;
 const doubleAtom = atom((get) => get(countAtom) * 2);
 doubleAtom.debugLabel = "doubleAtom";
         "#
