@@ -42,8 +42,6 @@ impl DebugLabelTransformVisitor {
         Vec<T>: VisitMutWith<Self>,
         T: VisitMutWith<Self> + StmtLike,
     {
-        stmts.visit_mut_children_with(self);
-
         let mut stmts_updated: Vec<T> = Vec::with_capacity(stmts.len());
 
         for mut stmt in stmts.take() {
