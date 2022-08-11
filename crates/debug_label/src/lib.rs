@@ -1,5 +1,6 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+use common::ATOM_IMPORTS;
 use swc_plugin::{
     ast::*,
     metadata::TransformPluginProgramMetadata,
@@ -7,20 +8,6 @@ use swc_plugin::{
     syntax_pos::DUMMY_SP,
     utils::{take::Take, StmtLike},
 };
-
-static ATOM_IMPORTS: &[&str] = &[
-    "atom",
-    "atomFamily",
-    "atomWithDefault",
-    "atomWithObservable",
-    "atomWithReducer",
-    "atomWithReset",
-    "atomWithStorage",
-    "freezeAtom",
-    "loadable",
-    "selectAtom",
-    "splitAtom",
-];
 
 struct DebugLabelTransformVisitor {
     current_var_declarator: Option<JsWord>,
