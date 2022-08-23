@@ -1,4 +1,5 @@
 pub static ATOM_IMPORTS: &[&str] = &[
+    "abortableAtom",
     "atom",
     "atomFamily",
     "atomWithDefault",
