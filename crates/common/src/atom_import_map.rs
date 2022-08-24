@@ -11,7 +11,7 @@ pub struct AtomImportMap {
 
 impl AtomImportMap {
     pub fn visit_import_decl(&mut self, import: &ImportDecl) {
-        if &&*import.src.value != &"jotai" {
+        if !import.src.value.starts_with("jotai") {
             return;
         }
 

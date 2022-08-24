@@ -152,8 +152,7 @@ const countAtom = atom(0);"#,
         r#"
 import { atom } from "jotai";
 const countAtom = atom(0);
-countAtom.debugLabel = "countAtom";
-        "#
+countAtom.debugLabel = "countAtom";"#
     );
 
     test!(
@@ -166,8 +165,7 @@ export const countAtom = atom(0);"#,
         r#"
 import { atom } from "jotai";
 export const countAtom = atom(0);
-countAtom.debugLabel = "countAtom";
-        "#
+countAtom.debugLabel = "countAtom";"#
     );
 
     test!(
@@ -183,8 +181,7 @@ import { atom } from "jotai";
 const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";
 const doubleAtom = atom((get) => get(countAtom) * 2);
-doubleAtom.debugLabel = "doubleAtom";
-        "#
+doubleAtom.debugLabel = "doubleAtom";"#
     );
 
     test!(
@@ -204,8 +201,37 @@ countAtom.debugLabel = "countAtom";
 let counter = 0;
 const increment = () => ++counter;
 const doubleAtom = atom((get) => get(countAtom) * 2);
-doubleAtom.debugLabel = "doubleAtom";
-        "#
+doubleAtom.debugLabel = "doubleAtom";"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(),
+        import_alias,
+        r#"
+import { atom as blah } from "jotai";
+const countAtom = blah(0);"#,
+        r#"
+import { atom as blah } from "jotai";
+const countAtom = blah(0);
+countAtom.debugLabel = "countAtom";"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(),
+        ignore_non_jotai_imports,
+        r#"
+import React from "react";
+import { atom } from "jotai";
+import { defaultCount } from "./utils";
+const countAtom = atom(0);"#,
+        r#"
+import React from "react";
+import { atom } from "jotai";
+import { defaultCount } from "./utils";      
+const countAtom = atom(0);
+countAtom.debugLabel = "countAtom";"#
     );
 
     test!(
@@ -218,8 +244,7 @@ const countAtom = jotai.atom(0);"#,
         r#"
 import * as jotai from "jotai";
 const countAtom = jotai.atom(0);
-countAtom.debugLabel = "countAtom";
-        "#
+countAtom.debugLabel = "countAtom";"#
     );
 
     test!(
@@ -231,8 +256,7 @@ import { atom } from "some-library";
 const countAtom = atom(0);"#,
         r#"
 import { atom } from "some-library";
-const countAtom = atom(0);
-        "#
+const countAtom = atom(0);"#
     );
 
     test!(
@@ -253,5 +277,23 @@ export default atom(0);"#,
         r#"
 import { atom } from "jotai";
 export default atom(0);"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(),
+        jotai_utils_import,
+        r#"
+import { atomWithImmer } from "jotai/immer";
+import { atomWithMachine } from "jotai/xstate";
+const immerAtom = atomWithImmer(0);
+const toggleMachineAtom = atomWithMachine(() => toggleMachine);"#,
+        r#"
+import { atomWithImmer } from "jotai/immer";
+import { atomWithMachine } from "jotai/xstate";
+const immerAtom = atomWithImmer(0);
+immerAtom.debugLabel = "immerAtom";
+const toggleMachineAtom = atomWithMachine(() => toggleMachine);
+toggleMachineAtom.debugLabel = "toggleMachineAtom";"#
     );
 }
