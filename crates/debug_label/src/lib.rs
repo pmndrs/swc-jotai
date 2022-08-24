@@ -1,6 +1,6 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use common::ATOM_IMPORTS;
+use common::AtomImportMap;
 use swc_plugin::{
     ast::*,
     metadata::TransformPluginProgramMetadata,
@@ -10,6 +10,7 @@ use swc_plugin::{
 };
 
 struct DebugLabelTransformVisitor {
+    atom_import_map: AtomImportMap,
     current_var_declarator: Option<JsWord>,
     debug_label_expr: Option<Expr>,
 }
@@ -17,6 +18,7 @@ struct DebugLabelTransformVisitor {
 impl DebugLabelTransformVisitor {
     pub fn new() -> Self {
         Self {
+            atom_import_map: Default::default(),
             current_var_declarator: None,
             debug_label_expr: None,
         }
@@ -52,6 +54,10 @@ impl DebugLabelTransformVisitor {
 impl VisitMut for DebugLabelTransformVisitor {
     noop_visit_mut_type!();
 
+    fn visit_mut_import_decl(&mut self, import: &mut ImportDecl) {
+        self.atom_import_map.visit_import_decl(import);
+    }
+
     fn visit_mut_var_declarator(&mut self, var_declarator: &mut VarDeclarator) {
         let old_var_declarator = self.current_var_declarator.take();
 
@@ -76,31 +82,29 @@ impl VisitMut for DebugLabelTransformVisitor {
 
         let atom_name = self.current_var_declarator.as_ref().unwrap();
         if let Callee::Expr(expr) = &call_expr.callee {
-            if let Expr::Ident(id) = &**expr {
-                if ATOM_IMPORTS.contains(&&*id.sym) {
-                    self.debug_label_expr = Some(Expr::Assign(AssignExpr {
-                        left: PatOrExpr::Expr(Box::new(Expr::Member(MemberExpr {
-                            obj: Box::new(Expr::Ident(Ident {
-                                sym: atom_name.clone(),
-                                span: DUMMY_SP,
-                                optional: false,
-                            })),
-                            prop: MemberProp::Ident(Ident {
-                                sym: "debugLabel".into(),
-                                span: DUMMY_SP,
-                                optional: false,
-                            }),
+            if self.atom_import_map.is_atom_import(expr) {
+                self.debug_label_expr = Some(Expr::Assign(AssignExpr {
+                    left: PatOrExpr::Expr(Box::new(Expr::Member(MemberExpr {
+                        obj: Box::new(Expr::Ident(Ident {
+                            sym: atom_name.clone(),
                             span: DUMMY_SP,
-                        }))),
-                        right: Box::new(Expr::Lit(Lit::Str(Str {
-                            value: atom_name.clone(),
+                            optional: false,
+                        })),
+                        prop: MemberProp::Ident(Ident {
+                            sym: "debugLabel".into(),
                             span: DUMMY_SP,
-                            raw: None,
-                        }))),
-                        op: op!("="),
+                            optional: false,
+                        }),
                         span: DUMMY_SP,
-                    }))
-                }
+                    }))),
+                    right: Box::new(Expr::Lit(Lit::Str(Str {
+                        value: atom_name.clone(),
+                        span: DUMMY_SP,
+                        raw: None,
+                    }))),
+                    op: op!("="),
+                    span: DUMMY_SP,
+                }))
             }
         }
     }
@@ -142,8 +146,12 @@ mod tests {
         Syntax::default(),
         |_| transform(),
         basic,
-        "const countAtom = atom(0);",
-        r#"const countAtom = atom(0);
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);"#,
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";
         "#
     );
@@ -152,8 +160,12 @@ countAtom.debugLabel = "countAtom";
         Syntax::default(),
         |_| transform(),
         exported_atom,
-        "export const countAtom = atom(0);",
-        r#"export const countAtom = atom(0);
+        r#"
+import { atom } from "jotai";
+export const countAtom = atom(0);"#,
+        r#"
+import { atom } from "jotai";
+export const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";
         "#
     );
@@ -162,9 +174,13 @@ countAtom.debugLabel = "countAtom";
         Syntax::default(),
         |_| transform(),
         multiple_atoms,
-        r#"const countAtom = atom(0);
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);
 const doubleAtom = atom((get) => get(countAtom) * 2);"#,
-        r#"const countAtom = atom(0);
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";
 const doubleAtom = atom((get) => get(countAtom) * 2);
 doubleAtom.debugLabel = "doubleAtom";
@@ -175,16 +191,47 @@ doubleAtom.debugLabel = "doubleAtom";
         Syntax::default(),
         |_| transform(),
         multiple_atoms_between_code,
-        r#"const countAtom = atom(0);
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);
 let counter = 0;
 const increment = () => ++counter;
 const doubleAtom = atom((get) => get(countAtom) * 2);"#,
-        r#"const countAtom = atom(0);
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";
 let counter = 0;
 const increment = () => ++counter;
 const doubleAtom = atom((get) => get(countAtom) * 2);
 doubleAtom.debugLabel = "doubleAtom";
+        "#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(),
+        namespace_import,
+        r#"
+import * as jotai from "jotai";
+const countAtom = jotai.atom(0);"#,
+        r#"
+import * as jotai from "jotai";
+const countAtom = jotai.atom(0);
+countAtom.debugLabel = "countAtom";
+        "#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(),
+        no_jotai_import,
+        r#"
+import { atom } from "some-library";
+const countAtom = atom(0);"#,
+        r#"
+        import { atom } from "some-library";
+const countAtom = atom(0);
         "#
     );
 }

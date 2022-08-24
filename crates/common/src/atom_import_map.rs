@@ -1,7 +1,9 @@
 use swc_common::collections::AHashSet;
 use swc_plugin::ast::*;
 
-#[derive(Debug)]
+use crate::ATOM_IMPORTS;
+
+#[derive(Debug, Default)]
 pub struct AtomImportMap {
     imports: AHashSet<JsWord>,
     namespace_imports: AHashSet<JsWord>,
@@ -9,19 +11,33 @@ pub struct AtomImportMap {
 
 impl AtomImportMap {
     pub fn visit_import_decl(&mut self, import: &ImportDecl) {
+        if &&*import.src.value != &"jotai" {
+            return;
+        }
+
         for s in &import.specifiers {
             let local_ident = match s {
                 ImportSpecifier::Named(ImportNamedSpecifier {
                     local, imported, ..
                 }) => match imported {
                     Some(imported) => {
-                        if let ModuleExportName::Ident(v) = imported {
-                            v.sym.clone()
+                        if let ModuleExportName::Ident(ident) = imported {
+                            if ATOM_IMPORTS.contains(&&*ident.sym) {
+                                local.sym.clone()
+                            } else {
+                                continue;
+                            }
                         } else {
                             continue;
                         }
                     }
-                    _ => local.sym.clone(),
+                    _ => {
+                        if ATOM_IMPORTS.contains(&&*local.sym) {
+                            local.sym.clone()
+                        } else {
+                            continue;
+                        }
+                    }
                 },
                 ImportSpecifier::Namespace(..) => {
                     self.namespace_imports.insert(import.src.value.clone());
@@ -34,15 +50,9 @@ impl AtomImportMap {
         }
     }
 
-    pub fn is_atom_import(&self, expr: &Expr, ident: &str) -> bool {
+    pub fn is_atom_import(&self, expr: &Expr) -> bool {
         match expr {
-            Expr::Ident(i) => {
-                if let Some(i_sym) = self.imports.get(&i.sym) {
-                    i_sym == ident
-                } else {
-                    false
-                }
-            }
+            Expr::Ident(i) => self.imports.get(&i.sym).is_some(),
             Expr::Member(MemberExpr {
                 obj,
                 prop: MemberProp::Ident(prop),
@@ -50,7 +60,7 @@ impl AtomImportMap {
             }) => {
                 if let Expr::Ident(obj) = &**obj {
                     if let Some(..) = self.namespace_imports.get(&obj.sym) {
-                        return prop.sym == *ident;
+                        return ATOM_IMPORTS.contains(&&*prop.sym);
                     }
                 }
                 false
