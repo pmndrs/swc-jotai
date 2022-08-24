@@ -18,27 +18,23 @@ impl AtomImportMap {
         for s in &import.specifiers {
             let local_ident = match s {
                 ImportSpecifier::Named(ImportNamedSpecifier {
-                    local, imported, ..
-                }) => match imported {
-                    Some(imported) => {
-                        if let ModuleExportName::Ident(ident) = imported {
-                            if ATOM_IMPORTS.contains(&&*ident.sym) {
-                                local.sym.clone()
-                            } else {
-                                continue;
-                            }
-                        } else {
-                            continue;
-                        }
+                    local,
+                    imported: Some(ModuleExportName::Ident(ident)),
+                    ..
+                }) => {
+                    if ATOM_IMPORTS.contains(&&*ident.sym) {
+                        local.sym.clone()
+                    } else {
+                        continue;
                     }
-                    _ => {
-                        if ATOM_IMPORTS.contains(&&*local.sym) {
-                            local.sym.clone()
-                        } else {
-                            continue;
-                        }
+                }
+                ImportSpecifier::Named(ImportNamedSpecifier { local, .. }) => {
+                    if ATOM_IMPORTS.contains(&&*local.sym) {
+                        local.sym.clone()
+                    } else {
+                        continue;
                     }
-                },
+                }
                 ImportSpecifier::Namespace(..) => {
                     self.namespace_imports.insert(import.src.value.clone());
                     continue;
