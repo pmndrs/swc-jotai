@@ -225,13 +225,33 @@ countAtom.debugLabel = "countAtom";
     test!(
         Syntax::default(),
         |_| transform(),
-        no_jotai_import,
+        atom_from_another_package,
         r#"
 import { atom } from "some-library";
 const countAtom = atom(0);"#,
         r#"
-        import { atom } from "some-library";
+import { atom } from "some-library";
 const countAtom = atom(0);
         "#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(),
+        no_jotai_import,
+        "const countAtom = atom(0);",
+        "const countAtom = atom(0);"
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(),
+        ignore_default_export,
+        r#"
+import { atom } from "jotai";
+export default atom(0);"#,
+        r#"
+import { atom } from "jotai";
+export default atom(0);"#
     );
 }
