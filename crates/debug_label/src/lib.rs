@@ -1,9 +1,11 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+use std::path::{Path, PathBuf};
+
 use common::AtomImportMap;
 use swc_plugin::{
     ast::*,
-    metadata::TransformPluginProgramMetadata,
+    metadata::{TransformPluginMetadataContextKind, TransformPluginProgramMetadata},
     plugin_transform,
     syntax_pos::DUMMY_SP,
     utils::{take::Take, StmtLike},
@@ -13,14 +15,17 @@ struct DebugLabelTransformVisitor {
     atom_import_map: AtomImportMap,
     current_var_declarator: Option<JsWord>,
     debug_label_expr: Option<Expr>,
+    #[allow(dead_code)]
+    path: PathBuf,
 }
 
 impl DebugLabelTransformVisitor {
-    pub fn new() -> Self {
+    pub fn new(path: &Path) -> Self {
         Self {
             atom_import_map: Default::default(),
             current_var_declarator: None,
             debug_label_expr: None,
+            path: path.to_owned(),
         }
     }
 }
@@ -121,9 +126,14 @@ impl VisitMut for DebugLabelTransformVisitor {
 #[plugin_transform]
 pub fn debug_label_transform(
     program: Program,
-    _metadata: TransformPluginProgramMetadata,
+    metadata: TransformPluginProgramMetadata,
 ) -> Program {
-    program.fold_with(&mut as_folder(DebugLabelTransformVisitor::new()))
+    let file_name = metadata
+        .get_context(&TransformPluginMetadataContextKind::Filename)
+        .unwrap_or_default()
+        .replace("\\", "/");
+    let path = Path::new(&file_name);
+    program.fold_with(&mut as_folder(DebugLabelTransformVisitor::new(path)))
 }
 
 #[cfg(test)]
@@ -135,16 +145,18 @@ mod tests {
 
     use super::*;
 
-    fn transform() -> impl Fold {
+    fn transform(path: Option<&Path>) -> impl Fold {
         chain!(
             resolver(Mark::new(), Mark::new(), false),
-            as_folder(DebugLabelTransformVisitor::new())
+            as_folder(DebugLabelTransformVisitor::new(
+                path.unwrap_or(&PathBuf::from("atoms.ts"))
+            ))
         )
     }
 
     test!(
         Syntax::default(),
-        |_| transform(),
+        |_| transform(None),
         basic,
         r#"
 import { atom } from "jotai";
@@ -157,7 +169,7 @@ countAtom.debugLabel = "countAtom";"#
 
     test!(
         Syntax::default(),
-        |_| transform(),
+        |_| transform(None),
         exported_atom,
         r#"
 import { atom } from "jotai";
@@ -170,7 +182,7 @@ countAtom.debugLabel = "countAtom";"#
 
     test!(
         Syntax::default(),
-        |_| transform(),
+        |_| transform(None),
         multiple_atoms,
         r#"
 import { atom } from "jotai";
@@ -186,7 +198,7 @@ doubleAtom.debugLabel = "doubleAtom";"#
 
     test!(
         Syntax::default(),
-        |_| transform(),
+        |_| transform(None),
         multiple_atoms_between_code,
         r#"
 import { atom } from "jotai";
@@ -206,7 +218,7 @@ doubleAtom.debugLabel = "doubleAtom";"#
 
     test!(
         Syntax::default(),
-        |_| transform(),
+        |_| transform(None),
         import_alias,
         r#"
 import { atom as blah } from "jotai";
@@ -219,7 +231,7 @@ countAtom.debugLabel = "countAtom";"#
 
     test!(
         Syntax::default(),
-        |_| transform(),
+        |_| transform(None),
         ignore_non_jotai_imports,
         r#"
 import React from "react";
@@ -236,7 +248,7 @@ countAtom.debugLabel = "countAtom";"#
 
     test!(
         Syntax::default(),
-        |_| transform(),
+        |_| transform(None),
         namespace_import,
         r#"
 import * as jotai from "jotai";
@@ -249,7 +261,7 @@ countAtom.debugLabel = "countAtom";"#
 
     test!(
         Syntax::default(),
-        |_| transform(),
+        |_| transform(None),
         atom_from_another_package,
         r#"
 import { atom } from "some-library";
@@ -261,7 +273,7 @@ const countAtom = atom(0);"#
 
     test!(
         Syntax::default(),
-        |_| transform(),
+        |_| transform(None),
         no_jotai_import,
         "const countAtom = atom(0);",
         "const countAtom = atom(0);"
@@ -269,7 +281,7 @@ const countAtom = atom(0);"#
 
     test!(
         Syntax::default(),
-        |_| transform(),
+        |_| transform(None),
         ignore_default_export,
         r#"
 import { atom } from "jotai";
@@ -281,7 +293,7 @@ export default atom(0);"#
 
     test!(
         Syntax::default(),
-        |_| transform(),
+        |_| transform(None),
         jotai_utils_import,
         r#"
 import { atomWithImmer } from "jotai/immer";
