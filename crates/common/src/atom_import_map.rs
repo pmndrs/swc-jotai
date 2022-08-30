@@ -48,7 +48,14 @@ impl AtomImportMap {
 
     pub fn is_atom_import(&self, expr: &Expr) -> bool {
         match expr {
+            // Handles default export expressions
+            Expr::Call(CallExpr {
+                callee: Callee::Expr(e),
+                ..
+            }) => self.is_atom_import(e),
+            // Handles: const countAtom = atom(0);
             Expr::Ident(i) => self.imports.get(&i.sym).is_some(),
+            // Handles: const countAtom = jotai.atom(0);
             Expr::Member(MemberExpr {
                 obj,
                 prop: MemberProp::Ident(prop),

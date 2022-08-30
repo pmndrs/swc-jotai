@@ -8,7 +8,7 @@ use swc_plugin::{
     metadata::{TransformPluginMetadataContextKind, TransformPluginProgramMetadata},
     plugin_transform,
     syntax_pos::DUMMY_SP,
-    utils::{take::Take, StmtLike},
+    utils::{take::Take, ModuleItemLike, StmtLike, StmtOrModuleItem},
 };
 
 struct DebugLabelTransformVisitor {
@@ -17,6 +17,31 @@ struct DebugLabelTransformVisitor {
     debug_label_expr: Option<Expr>,
     #[allow(dead_code)]
     path: PathBuf,
+}
+
+fn create_debug_label_assign_expr(atom_name: &JsWord) -> Expr {
+    Expr::Assign(AssignExpr {
+        left: PatOrExpr::Expr(Box::new(Expr::Member(MemberExpr {
+            obj: Box::new(Expr::Ident(Ident {
+                sym: atom_name.clone(),
+                span: DUMMY_SP,
+                optional: false,
+            })),
+            prop: MemberProp::Ident(Ident {
+                sym: "debugLabel".into(),
+                span: DUMMY_SP,
+                optional: false,
+            }),
+            span: DUMMY_SP,
+        }))),
+        right: Box::new(Expr::Lit(Lit::Str(Str {
+            value: atom_name.clone(),
+            span: DUMMY_SP,
+            raw: None,
+        }))),
+        op: op!("="),
+        span: DUMMY_SP,
+    })
 }
 
 impl DebugLabelTransformVisitor {
@@ -34,12 +59,62 @@ impl DebugLabelTransformVisitor {
     fn visit_mut_stmt_like<T>(&mut self, stmts: &mut Vec<T>)
     where
         Vec<T>: VisitMutWith<Self>,
-        T: VisitMutWith<Self> + StmtLike,
+        T: VisitMutWith<Self> + StmtLike + ModuleItemLike + StmtOrModuleItem,
     {
         let mut stmts_updated: Vec<T> = Vec::with_capacity(stmts.len());
 
-        for mut stmt in stmts.take() {
-            stmt.visit_mut_with(self);
+        for stmt in stmts.take() {
+            let stmt = match stmt.into_stmt() {
+                Ok(mut stmt) => {
+                    stmt.visit_mut_with(self);
+                    T::from_stmt(stmt)
+                }
+                Err(mut module_decl) => match module_decl {
+                    ModuleDecl::ExportDefaultExpr(default_export) => {
+                        if !self.atom_import_map.is_atom_import(&default_export.expr) {
+                            continue;
+                        }
+                        // let atom_name: JsWord = self.path.file_name().unwrap().to_string_lossy().into();
+
+                        // Variable declaration
+                        stmts_updated.push(T::from_stmt(Stmt::Decl(Decl::Var(VarDecl {
+                            declare: Default::default(),
+                            decls: vec![VarDeclarator {
+                                definite: false,
+                                init: Some(default_export.expr),
+                                name: Pat::Ident(Ident::new("countAtom".into(), DUMMY_SP).into()),
+                                span: DUMMY_SP,
+                            }],
+                            kind: VarDeclKind::Const,
+                            span: DUMMY_SP,
+                        }))));
+                        // Assign debug label
+                        stmts_updated.push(T::from_stmt(Stmt::Expr(ExprStmt {
+                            span: DUMMY_SP,
+                            expr: Box::new(create_debug_label_assign_expr(&"countAtom".into())),
+                        })));
+                        // export default expression
+                        stmts_updated.push(
+                            T::try_from_module_decl(ModuleDecl::ExportDefaultExpr(
+                                ExportDefaultExpr {
+                                    expr: Box::new(Expr::Ident(Ident {
+                                        sym: "countAtom".into(),
+                                        span: DUMMY_SP,
+                                        optional: false,
+                                    })),
+                                    span: DUMMY_SP,
+                                },
+                            ))
+                            .unwrap(),
+                        );
+                        continue;
+                    }
+                    _ => {
+                        module_decl.visit_mut_with(self);
+                        T::try_from_module_decl(module_decl).unwrap()
+                    }
+                },
+            };
             stmts_updated.push(stmt);
 
             if self.debug_label_expr.is_none() {
@@ -88,28 +163,7 @@ impl VisitMut for DebugLabelTransformVisitor {
         let atom_name = self.current_var_declarator.as_ref().unwrap();
         if let Callee::Expr(expr) = &call_expr.callee {
             if self.atom_import_map.is_atom_import(expr) {
-                self.debug_label_expr = Some(Expr::Assign(AssignExpr {
-                    left: PatOrExpr::Expr(Box::new(Expr::Member(MemberExpr {
-                        obj: Box::new(Expr::Ident(Ident {
-                            sym: atom_name.clone(),
-                            span: DUMMY_SP,
-                            optional: false,
-                        })),
-                        prop: MemberProp::Ident(Ident {
-                            sym: "debugLabel".into(),
-                            span: DUMMY_SP,
-                            optional: false,
-                        }),
-                        span: DUMMY_SP,
-                    }))),
-                    right: Box::new(Expr::Lit(Lit::Str(Str {
-                        value: atom_name.clone(),
-                        span: DUMMY_SP,
-                        raw: None,
-                    }))),
-                    op: op!("="),
-                    span: DUMMY_SP,
-                }))
+                self.debug_label_expr = Some(create_debug_label_assign_expr(atom_name))
             }
         }
     }
@@ -288,7 +342,9 @@ import { atom } from "jotai";
 export default atom(0);"#,
         r#"
 import { atom } from "jotai";
-export default atom(0);"#
+const countAtom = atom(0);
+countAtom.debugLabel = "countAtom";
+export default countAtom;"#
     );
 
     test!(
