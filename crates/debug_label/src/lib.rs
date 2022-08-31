@@ -74,7 +74,9 @@ impl DebugLabelTransformVisitor {
                         if !self.atom_import_map.is_atom_import(&default_export.expr) {
                             continue;
                         }
-                        // let atom_name: JsWord = self.path.file_name().unwrap().to_string_lossy().into();
+
+                        let atom_name: JsWord =
+                            self.path.file_stem().unwrap().to_string_lossy().into();
 
                         // Variable declaration
                         stmts_updated.push(T::from_stmt(Stmt::Decl(Decl::Var(VarDecl {
@@ -82,7 +84,7 @@ impl DebugLabelTransformVisitor {
                             decls: vec![VarDeclarator {
                                 definite: false,
                                 init: Some(default_export.expr),
-                                name: Pat::Ident(Ident::new("countAtom".into(), DUMMY_SP).into()),
+                                name: Pat::Ident(Ident::new(atom_name.clone(), DUMMY_SP).into()),
                                 span: DUMMY_SP,
                             }],
                             kind: VarDeclKind::Const,
@@ -91,14 +93,14 @@ impl DebugLabelTransformVisitor {
                         // Assign debug label
                         stmts_updated.push(T::from_stmt(Stmt::Expr(ExprStmt {
                             span: DUMMY_SP,
-                            expr: Box::new(create_debug_label_assign_expr(&"countAtom".into())),
+                            expr: Box::new(create_debug_label_assign_expr(&atom_name)),
                         })));
                         // export default expression
                         stmts_updated.push(
                             T::try_from_module_decl(ModuleDecl::ExportDefaultExpr(
                                 ExportDefaultExpr {
                                     expr: Box::new(Expr::Ident(Ident {
-                                        sym: "countAtom".into(),
+                                        sym: atom_name.clone(),
                                         span: DUMMY_SP,
                                         optional: false,
                                     })),
@@ -336,7 +338,21 @@ const countAtom = atom(0);"#
     test!(
         Syntax::default(),
         |_| transform(None),
-        ignore_default_export,
+        handle_default_export,
+        r#"
+import { atom } from "jotai";
+export default atom(0);"#,
+        r#"
+import { atom } from "jotai";
+const atoms = atom(0);
+atoms.debugLabel = "atoms";
+export default atoms;"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(Some(Path::new("countAtom.ts"))),
+        handle_file_naming_default_export,
         r#"
 import { atom } from "jotai";
 export default atom(0);"#,
