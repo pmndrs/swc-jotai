@@ -1,7 +1,9 @@
 [workspace]
 
 members = [
-  "crates/*",
+  "crates/common",
+  "crates/debug_label",
+  "crates/react_refresh",
 ]
 
 [profile.release]

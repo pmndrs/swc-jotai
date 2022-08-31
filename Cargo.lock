@@ -244,18 +244,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "debug_label"
-version = "0.1.0"
-dependencies = [
- "common",
- "swc_common 0.27.0",
- "swc_ecma_parser",
- "swc_ecma_transforms_base",
- "swc_ecma_transforms_testing",
- "swc_plugin",
-]
-
-[[package]]
 name = "debug_unreachable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1496,6 +1484,18 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "swc_common 0.26.0",
+]
+
+[[package]]
+name = "swc_jotai_debug_label"
+version = "0.0.1"
+dependencies = [
+ "common",
+ "swc_common 0.27.0",
+ "swc_ecma_parser",
+ "swc_ecma_transforms_base",
+ "swc_ecma_transforms_testing",
+ "swc_plugin",
 ]
 
 [[package]]

@@ -1,0 +1,23 @@
+{
+  "name": "@swc-jotai/debug-label",
+  "version": "0.0.1",
+  "description": "SWC plugin for automatic jotai atom debug labels",
+  "author": "Mathis Møller",
+  "license": "MIT",
+  "keywords": [
+    "swc-plugin",
+    "jotai"
+  ],
+  "homepage": "https://jotai.org/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pmndrs/swc-jotai"
+  },
+  "bugs": {
+    "url": "https://github.com/pmndrs/swc-jotai/issues"
+  },
+  "main": "swc_jotai_debug_label.wasm",
+  "scripts": {
+    "prepack": "cargo prepublish --release && cp ../../target/wasm32-wasi/release/swc_jotai_debug_label.wasm ."
+  }
+}

@@ -1,4 +1,7 @@
 [package]
+authors = ["Mathis Møller"]
+description = "Common code for jotai SWC plugins"
+license = "MIT"
 name = "common"
 version = "0.1.0"
 edition = "2021"
