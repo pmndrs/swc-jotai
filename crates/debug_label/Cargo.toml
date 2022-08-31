@@ -1,5 +1,8 @@
 [package]
 name = "swc_jotai_debug_label"
+authors = ["Mathis Møller"]
+description = "SWC plugin for automatic jotai atom debug labels"
+license = "MIT"
 version = "0.0.1"
 edition = "2021"
 
