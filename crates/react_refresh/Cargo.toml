@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-swc_plugin = "0.88.1"
+swc_core = { version = "0.14.0", features = [
+  "ast", 
+  "plugin_transform",
+  "visit",
+] }

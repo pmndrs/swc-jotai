@@ -1,5 +1,5 @@
 use swc_common::collections::AHashSet;
-use swc_plugin::ast::*;
+use swc_core::{ast::*, atoms::JsWord};
 
 use crate::ATOM_IMPORTS;
 

@@ -3,12 +3,15 @@
 use std::path::{Path, PathBuf};
 
 use common::AtomImportMap;
-use swc_plugin::{
+use swc_common::{
+    plugin::metadata::TransformPluginMetadataContextKind, util::take::Take, DUMMY_SP,
+};
+use swc_core::{
     ast::*,
-    metadata::{TransformPluginMetadataContextKind, TransformPluginProgramMetadata},
-    plugin_transform,
-    syntax_pos::DUMMY_SP,
-    utils::{take::Take, ModuleItemLike, StmtLike, StmtOrModuleItem},
+    atoms::JsWord,
+    plugin::{plugin_transform, proxies::TransformPluginProgramMetadata},
+    utils::{ModuleItemLike, StmtLike, StmtOrModuleItem},
+    visit::{as_folder, noop_visit_mut_type, FoldWith, VisitMut, VisitMutWith},
 };
 
 struct DebugLabelTransformVisitor {
@@ -194,12 +197,12 @@ pub fn debug_label_transform(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use swc_common::{chain, Mark};
     use swc_ecma_parser::*;
     use swc_ecma_transforms_base::resolver;
     use swc_ecma_transforms_testing::test;
-    use swc_plugin::{syntax_pos::Mark, *};
-
-    use super::*;
+    use swc_ecma_visit::Fold;
 
     fn transform(path: Option<&Path>) -> impl Fold {
         chain!(

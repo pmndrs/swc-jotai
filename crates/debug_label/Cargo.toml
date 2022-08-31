@@ -11,10 +11,16 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 common = { path = "../common" }
-swc_common = "0.27.0"
-swc_plugin = "0.88.1"
+swc_common = "0.27.13"
+swc_core = { version = "0.14.0", features = [
+  "ast", 
+  "plugin_transform",
+  "visit",
+  "utils",
+] }
 
 [dev-dependencies]
-swc_ecma_parser = "0.116.0"
-swc_ecma_transforms_base = "0.102.0"
-swc_ecma_transforms_testing = "0.104.0"
+swc_ecma_parser = "0.118.0"
+swc_ecma_transforms_base = "0.105.0"
+swc_ecma_transforms_testing = "0.107.0"
+swc_ecma_visit = "0.76.6"

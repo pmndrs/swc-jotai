@@ -1,6 +1,10 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use swc_plugin::{ast::*, metadata::TransformPluginProgramMetadata, plugin_transform};
+use swc_core::{
+    ast::*,
+    plugin::{plugin_transform, proxies::TransformPluginProgramMetadata},
+    visit::VisitMut,
+};
 
 pub struct TransformVisitor;
 
