@@ -190,7 +190,7 @@ pub fn debug_label_transform(
     let file_name = metadata
         .get_context(&TransformPluginMetadataContextKind::Filename)
         .unwrap_or_default()
-        .replace("\\", "/");
+        .replace('\\', "/");
     let path = Path::new(&file_name);
     program.fold_with(&mut as_folder(DebugLabelTransformVisitor::new(path)))
 }
