@@ -1616,7 +1616,6 @@ dependencies = [
  "swc_ecma_parser",
  "swc_ecma_transforms_base 0.105.0",
  "swc_ecma_transforms_testing 0.107.0",
- "swc_ecma_visit",
 ]
 
 [[package]]

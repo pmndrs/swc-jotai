@@ -199,10 +199,10 @@ pub fn debug_label_transform(
 mod tests {
     use super::*;
     use swc_common::{chain, Mark};
+    use swc_core::visit::Fold;
     use swc_ecma_parser::*;
     use swc_ecma_transforms_base::resolver;
     use swc_ecma_transforms_testing::test;
-    use swc_ecma_visit::Fold;
 
     fn transform(path: Option<&Path>) -> impl Fold {
         chain!(

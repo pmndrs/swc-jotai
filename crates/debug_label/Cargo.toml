@@ -23,4 +23,3 @@ swc_core = { version = "0.14.0", features = [
 swc_ecma_parser = "0.118.0"
 swc_ecma_transforms_base = "0.105.0"
 swc_ecma_transforms_testing = "0.107.0"
-swc_ecma_visit = "0.76.6"
