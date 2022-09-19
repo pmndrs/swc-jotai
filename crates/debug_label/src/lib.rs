@@ -73,8 +73,11 @@ impl DebugLabelTransformVisitor {
                     T::from_stmt(stmt)
                 }
                 Err(mut module_decl) => match module_decl {
-                    ModuleDecl::ExportDefaultExpr(default_export) => {
+                    ModuleDecl::ExportDefaultExpr(mut default_export) => {
                         if !self.atom_import_map.is_atom_import(&default_export.expr) {
+                            default_export.visit_mut_with(self);
+                            stmts_updated
+                                .push(T::try_from_module_decl(default_export.into()).unwrap());
                             continue;
                         }
 
@@ -382,5 +385,19 @@ const immerAtom = atomWithImmer(0);
 immerAtom.debugLabel = "immerAtom";
 const toggleMachineAtom = atomWithMachine(() => toggleMachine);
 toggleMachineAtom.debugLabel = "toggleMachineAtom";"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        test_default_export,
+        r#"
+function fn() { return true; }
+        
+export default fn;"#,
+        r#"
+function fn() { return true; }
+                
+export default fn;"#
     );
 }
