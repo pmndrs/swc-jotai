@@ -400,4 +400,65 @@ function fn() { return true; }
                 
 export default fn;"#
     );
+
+    test!(
+        Syntax::Es(EsConfig {
+            jsx: true,
+            ..Default::default()
+        }),
+        |_| transform(None),
+        test_next_app,
+        r#"
+import { Provider } from "jotai";
+
+function MyApp({ Component, pageProps }) {
+  return <Provider><Component {...pageProps} /></Provider>;
+}
+        
+export default MyApp;"#,
+        r#"
+import { Provider } from "jotai";
+
+function MyApp({ Component, pageProps }) {
+  return <Provider><Component {...pageProps} /></Provider>;
+}
+                
+export default MyApp;"#
+    );
+
+    test!(
+        Syntax::Es(EsConfig {
+            jsx: true,
+            ..Default::default()
+        }),
+        |_| transform(None),
+        test_nextjs_page,
+        r#"
+import { atom, useAtom } from "jotai";
+
+const countAtom = atom(0);
+        
+export default function AboutPage() {
+  const [count, setCount] = useAtom(countAtom);
+  return (
+    <div>
+      <div>About us</div>
+      {count} <button onClick={() => setCount((c) => c + 1)}>+1</button>
+    </div>
+  );
+}"#,
+        r#"
+import { atom, useAtom } from "jotai";
+
+const countAtom = atom(0);
+countAtom.debugLabel = "countAtom";
+        
+export default function AboutPage() {
+  const [count, setCount] = useAtom(countAtom);
+  return <div>
+      <div>About us</div>
+      {count} <button onClick={() => setCount((c) => c + 1)}>+1</button>
+    </div>;
+}"#
+    );
 }
