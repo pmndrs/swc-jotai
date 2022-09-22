@@ -7,11 +7,13 @@ use swc_common::{
     plugin::metadata::TransformPluginMetadataContextKind, util::take::Take, DUMMY_SP,
 };
 use swc_core::{
-    ast::*,
-    atoms::JsWord,
+    ecma::{
+        ast::*,
+        atoms::JsWord,
+        utils::{ModuleItemLike, StmtLike, StmtOrModuleItem},
+        visit::{as_folder, noop_visit_mut_type, FoldWith, VisitMut, VisitMutWith},
+    },
     plugin::{plugin_transform, proxies::TransformPluginProgramMetadata},
-    utils::{ModuleItemLike, StmtLike, StmtOrModuleItem},
-    visit::{as_folder, noop_visit_mut_type, FoldWith, VisitMut, VisitMutWith},
 };
 
 struct DebugLabelTransformVisitor {
@@ -70,14 +72,16 @@ impl DebugLabelTransformVisitor {
             let stmt = match stmt.into_stmt() {
                 Ok(mut stmt) => {
                     stmt.visit_mut_with(self);
-                    T::from_stmt(stmt)
+                    <T as StmtLike>::from_stmt(stmt)
                 }
                 Err(mut module_decl) => match module_decl {
                     ModuleDecl::ExportDefaultExpr(mut default_export) => {
                         if !self.atom_import_map.is_atom_import(&default_export.expr) {
                             default_export.visit_mut_with(self);
-                            stmts_updated
-                                .push(T::try_from_module_decl(default_export.into()).unwrap());
+                            stmts_updated.push(
+                                <T as ModuleItemLike>::try_from_module_decl(default_export.into())
+                                    .unwrap(),
+                            );
                             continue;
                         }
 
@@ -85,41 +89,45 @@ impl DebugLabelTransformVisitor {
                             self.path.file_stem().unwrap().to_string_lossy().into();
 
                         // Variable declaration
-                        stmts_updated.push(T::from_stmt(Stmt::Decl(Decl::Var(VarDecl {
-                            declare: Default::default(),
-                            decls: vec![VarDeclarator {
-                                definite: false,
-                                init: Some(default_export.expr),
-                                name: Pat::Ident(Ident::new(atom_name.clone(), DUMMY_SP).into()),
+                        stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Decl(Decl::Var(
+                            Box::new(VarDecl {
+                                declare: Default::default(),
+                                decls: vec![VarDeclarator {
+                                    definite: false,
+                                    init: Some(default_export.expr),
+                                    name: Pat::Ident(
+                                        Ident::new(atom_name.clone(), DUMMY_SP).into(),
+                                    ),
+                                    span: DUMMY_SP,
+                                }],
+                                kind: VarDeclKind::Const,
                                 span: DUMMY_SP,
-                            }],
-                            kind: VarDeclKind::Const,
-                            span: DUMMY_SP,
-                        }))));
+                            }),
+                        ))));
                         // Assign debug label
-                        stmts_updated.push(T::from_stmt(Stmt::Expr(ExprStmt {
+                        stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Expr(ExprStmt {
                             span: DUMMY_SP,
                             expr: Box::new(create_debug_label_assign_expr(&atom_name)),
                         })));
                         // export default expression
                         stmts_updated.push(
-                            T::try_from_module_decl(ModuleDecl::ExportDefaultExpr(
-                                ExportDefaultExpr {
+                            <T as ModuleItemLike>::try_from_module_decl(
+                                ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
                                     expr: Box::new(Expr::Ident(Ident {
                                         sym: atom_name.clone(),
                                         span: DUMMY_SP,
                                         optional: false,
                                     })),
                                     span: DUMMY_SP,
-                                },
-                            ))
+                                }),
+                            )
                             .unwrap(),
                         );
                         continue;
                     }
                     _ => {
                         module_decl.visit_mut_with(self);
-                        T::try_from_module_decl(module_decl).unwrap()
+                        <T as ModuleItemLike>::try_from_module_decl(module_decl).unwrap()
                     }
                 },
             };
@@ -129,7 +137,7 @@ impl DebugLabelTransformVisitor {
                 continue;
             }
 
-            stmts_updated.push(T::from_stmt(Stmt::Expr(ExprStmt {
+            stmts_updated.push(<T as StmtOrModuleItem>::from_stmt(Stmt::Expr(ExprStmt {
                 span: DUMMY_SP,
                 expr: Box::new(self.debug_label_expr.take().unwrap()),
             })))
@@ -202,7 +210,7 @@ pub fn debug_label_transform(
 mod tests {
     use super::*;
     use swc_common::{chain, Mark};
-    use swc_core::visit::Fold;
+    use swc_core::ecma::visit::Fold;
     use swc_ecma_parser::*;
     use swc_ecma_transforms_base::resolver;
     use swc_ecma_transforms_testing::test;
@@ -460,5 +468,20 @@ export default function AboutPage() {
       {count} <button onClick={() => setCount((c) => c + 1)}>+1</button>
     </div>;
 }"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        basic_with_existing_debug_label,
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);
+countAtom.debugLabel = "fancyAtomName";"#,
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);
+countAtom.debugLabel = "countAtom";
+countAtom.debugLabel = "fancyAtomName";"#
     );
 }

@@ -1,9 +1,8 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use swc_core::{
-    ast::*,
+    ecma::{ast::*, visit::VisitMut},
     plugin::{plugin_transform, proxies::TransformPluginProgramMetadata},
-    visit::VisitMut,
 };
 
 pub struct TransformVisitor;
