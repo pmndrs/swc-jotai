@@ -7,5 +7,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-swc_common = "0.28.9"
-swc_core = { version = "0.25.17", features = ["ecma_ast"] }
+swc_common = "0.28.10"
+swc_core = { version = "0.26.0", features = ["ecma_ast"] }
