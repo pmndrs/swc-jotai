@@ -11,6 +11,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 common = { path = "../common" }
+lazy_static = "1.4.0"
+regex = "1.6.0"
 swc_common = "0.28.10"
 swc_core = { version = "0.26.0", features = [
   "ecma_utils",

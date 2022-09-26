@@ -1,5 +1,10 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+#[macro_use]
+extern crate lazy_static;
+
+use regex::Regex;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use common::AtomImportMap;
@@ -86,8 +91,12 @@ impl DebugLabelTransformVisitor {
                             continue;
                         }
 
-                        let atom_name: JsWord =
-                            self.path.file_stem().unwrap().to_string_lossy().into();
+                        let atom_name: JsWord = self
+                            .path
+                            .file_stem()
+                            .unwrap_or(OsStr::new("default_atom"))
+                            .to_string_lossy()
+                            .into();
 
                         // Variable declaration
                         stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Decl(Decl::Var(
@@ -198,15 +207,24 @@ pub fn debug_label(path: &Path) -> impl Fold {
     as_folder(DebugLabelTransformVisitor::new(path))
 }
 
+fn convert_path_to_posix(path: &str) -> String {
+    lazy_static! {
+        static ref PATH_REPLACEMENT_REGEX: Regex = Regex::new(r":\\|\\").unwrap();
+    }
+
+    PATH_REPLACEMENT_REGEX.replace_all(path, "/").to_string()
+}
+
 #[plugin_transform]
 pub fn debug_label_transform(
     program: Program,
     metadata: TransformPluginProgramMetadata,
 ) -> Program {
-    let file_name = metadata
-        .get_context(&TransformPluginMetadataContextKind::Filename)
-        .unwrap_or_default()
-        .replace('\\', "/");
+    let file_name = convert_path_to_posix(
+        &metadata
+            .get_context(&TransformPluginMetadataContextKind::Filename)
+            .unwrap_or_default(),
+    );
     let path = Path::new(&file_name);
     program.fold_with(&mut as_folder(DebugLabelTransformVisitor::new(path)))
 }
@@ -372,6 +390,20 @@ export default atoms;"#
         Syntax::default(),
         |_| transform(Some(Path::new("countAtom.ts"))),
         handle_file_naming_default_export,
+        r#"
+import { atom } from "jotai";
+export default atom(0);"#,
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);
+countAtom.debugLabel = "countAtom";
+export default countAtom;"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(Some(Path::new("src/atoms/countAtom.ts"))),
+        handle_file_path_default_export,
         r#"
 import { atom } from "jotai";
 export default atom(0);"#,
