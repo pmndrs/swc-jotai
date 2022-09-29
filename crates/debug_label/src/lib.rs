@@ -6,6 +6,7 @@ extern crate lazy_static;
 use regex::Regex;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use swc_common::SyntaxContext;
 
 use common::AtomImportMap;
 use swc_common::{
@@ -24,18 +25,19 @@ use swc_core::{
 
 struct DebugLabelTransformVisitor {
     atom_import_map: AtomImportMap,
-    current_var_declarator: Option<JsWord>,
+    current_var_declarator: Option<Id>,
     debug_label_expr: Option<Expr>,
     #[allow(dead_code)]
     path: PathBuf,
 }
 
-fn create_debug_label_assign_expr(atom_name: &JsWord) -> Expr {
+fn create_debug_label_assign_expr(atom_name_id: Id) -> Expr {
+    let atom_name = atom_name_id.0.clone();
     Expr::Assign(AssignExpr {
         left: PatOrExpr::Expr(Box::new(Expr::Member(MemberExpr {
             obj: Box::new(Expr::Ident(Ident {
-                sym: atom_name.clone(),
-                span: DUMMY_SP,
+                sym: atom_name_id.0,
+                span: DUMMY_SP.with_ctxt(atom_name_id.1),
                 optional: false,
             })),
             prop: MemberProp::Ident(Ident {
@@ -46,7 +48,7 @@ fn create_debug_label_assign_expr(atom_name: &JsWord) -> Expr {
             span: DUMMY_SP,
         }))),
         right: Box::new(Expr::Lit(Lit::Str(Str {
-            value: atom_name.clone(),
+            value: atom_name,
             span: DUMMY_SP,
             raw: None,
         }))),
@@ -117,7 +119,10 @@ impl DebugLabelTransformVisitor {
                         // Assign debug label
                         stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Expr(ExprStmt {
                             span: DUMMY_SP,
-                            expr: Box::new(create_debug_label_assign_expr(&atom_name)),
+                            expr: Box::new(create_debug_label_assign_expr((
+                                atom_name.clone(),
+                                SyntaxContext::default(),
+                            ))),
                         })));
                         // export default expression
                         stmts_updated.push(
@@ -167,12 +172,15 @@ impl VisitMut for DebugLabelTransformVisitor {
     fn visit_mut_var_declarator(&mut self, var_declarator: &mut VarDeclarator) {
         let old_var_declarator = self.current_var_declarator.take();
 
-        self.current_var_declarator =
-            if let Pat::Ident(BindingIdent { id, .. }) = &var_declarator.name {
-                Some(id.sym.clone())
-            } else {
-                None
-            };
+        self.current_var_declarator = if let Pat::Ident(BindingIdent {
+            id: Ident { span, sym, .. },
+            ..
+        }) = &var_declarator.name
+        {
+            Some((sym.clone(), span.ctxt))
+        } else {
+            None
+        };
 
         var_declarator.visit_mut_children_with(self);
 
@@ -189,7 +197,7 @@ impl VisitMut for DebugLabelTransformVisitor {
         let atom_name = self.current_var_declarator.as_ref().unwrap();
         if let Callee::Expr(expr) = &call_expr.callee {
             if self.atom_import_map.is_atom_import(expr) {
-                self.debug_label_expr = Some(create_debug_label_assign_expr(atom_name))
+                self.debug_label_expr = Some(create_debug_label_assign_expr(atom_name.clone()))
             }
         }
     }
