@@ -16,10 +16,32 @@ fn test(input: PathBuf) {
             jsx: true,
             ..Default::default()
         }),
-        &|_| {
+        &|t| {
+            let unresolved_mark = Mark::new();
+            let top_level_mark = Mark::new();
+
             chain!(
-                resolver(Mark::new(), Mark::new(), false),
-                debug_label(&PathBuf::from("atoms.ts"))
+                resolver(unresolved_mark, top_level_mark, false),
+                debug_label(&PathBuf::from("atoms.ts")),
+                swc_ecma_transforms_react::react(
+                    t.cm.clone(),
+                    Some(t.comments.clone(),),
+                    swc_ecma_transforms_react::Options {
+                        development: Some(true),
+                        refresh: Some(swc_ecma_transforms_react::RefreshOptions {
+                            refresh_reg: "$___refreshReg$".into(),
+                            refresh_sig: "$___refreshSig$".into(),
+                            emit_full_signatures: false
+                        }),
+                        ..Default::default()
+                    },
+                    top_level_mark
+                ),
+                swc_ecma_transforms_compat::es2015(
+                    unresolved_mark,
+                    Some(t.comments.clone()),
+                    Default::default()
+                ),
             )
         },
         &input,
