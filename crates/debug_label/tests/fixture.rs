@@ -46,5 +46,6 @@ fn test(input: PathBuf) {
         },
         &input,
         &output,
+        Default::default(),
     )
 }
