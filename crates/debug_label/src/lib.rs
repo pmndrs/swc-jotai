@@ -1,14 +1,10 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-#[macro_use]
-extern crate lazy_static;
-
-use regex::Regex;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use swc_common::SyntaxContext;
 
-use common::AtomImportMap;
+use common::{convert_path_to_posix, AtomImportMap};
 use swc_common::{
     plugin::metadata::TransformPluginMetadataContextKind, util::take::Take, DUMMY_SP,
 };
@@ -96,7 +92,7 @@ impl DebugLabelTransformVisitor {
                         let atom_name: JsWord = self
                             .path
                             .file_stem()
-                            .unwrap_or(OsStr::new("default_atom"))
+                            .unwrap_or_else(|| OsStr::new("default_atom"))
                             .to_string_lossy()
                             .into();
 
@@ -213,14 +209,6 @@ impl VisitMut for DebugLabelTransformVisitor {
 
 pub fn debug_label(path: &Path) -> impl Fold {
     as_folder(DebugLabelTransformVisitor::new(path))
-}
-
-fn convert_path_to_posix(path: &str) -> String {
-    lazy_static! {
-        static ref PATH_REPLACEMENT_REGEX: Regex = Regex::new(r":\\|\\").unwrap();
-    }
-
-    PATH_REPLACEMENT_REGEX.replace_all(path, "/").to_string()
 }
 
 #[plugin_transform]
