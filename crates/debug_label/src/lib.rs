@@ -23,7 +23,6 @@ struct DebugLabelTransformVisitor {
     atom_import_map: AtomImportMap,
     current_var_declarator: Option<Id>,
     debug_label_expr: Option<Expr>,
-    #[allow(dead_code)]
     path: PathBuf,
 }
 

@@ -30,7 +30,7 @@ pub struct ReactRefreshTransformVisitor {
     path: PathBuf,
 }
 
-fn create_react_refresh_call_expr(key: &str, atom_expr: &CallExpr) -> Box<Expr> {
+fn create_react_refresh_call_expr(key: String, atom_expr: &CallExpr) -> Box<Expr> {
     Box::new(Expr::Call(CallExpr {
         span: DUMMY_SP,
         callee: Callee::Expr(Box::new(Expr::Member(MemberExpr {
@@ -62,7 +62,7 @@ fn create_react_refresh_call_expr(key: &str, atom_expr: &CallExpr) -> Box<Expr> 
 
 fn create_react_refresh_var_decl(
     atom_name_id: Id,
-    key: &str,
+    key: String,
     atom_expr: &CallExpr,
 ) -> VarDeclarator {
     let atom_name = atom_name_id.0.clone();
@@ -72,6 +72,10 @@ fn create_react_refresh_var_decl(
         init: Some(create_react_refresh_call_expr(key, atom_expr)),
         definite: false,
     }
+}
+
+fn create_cache_key(atom_name: &JsWord, path: &PathBuf) -> String {
+    path.clone().display().to_string() + "/" + &atom_name.clone().to_string().to_owned()
 }
 
 impl ReactRefreshTransformVisitor {
@@ -110,7 +114,7 @@ impl ReactRefreshTransformVisitor {
                         }
                         is_atom_present = true;
 
-                        let _atom_name: JsWord = self
+                        let atom_name: JsWord = self
                             .path
                             .file_stem()
                             .unwrap_or_else(|| OsStr::new("default_atom"))
@@ -122,7 +126,7 @@ impl ReactRefreshTransformVisitor {
                             <T as ModuleItemLike>::try_from_module_decl(
                                 ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
                                     expr: create_react_refresh_call_expr(
-                                        "key",
+                                        create_cache_key(&atom_name, &self.path),
                                         default_export.expr.as_call().unwrap(),
                                     ),
                                     span: DUMMY_SP,
@@ -216,7 +220,7 @@ impl VisitMut for ReactRefreshTransformVisitor {
             if self.atom_import_map.is_atom_import(expr) {
                 self.refresh_atom_var_decl = Some(create_react_refresh_var_decl(
                     atom_name.clone(),
-                    "key",
+                    create_cache_key(&atom_name.0, &self.path),
                     call_expr,
                 ))
             }
@@ -286,6 +290,6 @@ globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   },
 }
 import { atom } from "jotai";
-const countAtom = globalThis.jotaiAtomCache.get("key", atom(0));"#
+const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));"#
     );
 }
