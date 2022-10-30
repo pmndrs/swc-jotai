@@ -1,22 +1,24 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
-use swc_common::SyntaxContext;
+use std::{
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
 
 use common::{convert_path_to_posix, AtomImportMap};
-use swc_common::{
-    plugin::metadata::TransformPluginMetadataContextKind, util::take::Take, DUMMY_SP,
-};
-use swc_core::ecma::visit::Fold;
 use swc_core::{
+    common::util::take::Take,
+    common::DUMMY_SP,
     ecma::{
         ast::*,
         atoms::JsWord,
         utils::{ModuleItemLike, StmtLike, StmtOrModuleItem},
-        visit::{as_folder, noop_visit_mut_type, FoldWith, VisitMut, VisitMutWith},
+        visit::{as_folder, noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
     },
-    plugin::{plugin_transform, proxies::TransformPluginProgramMetadata},
+    plugin::{
+        metadata::TransformPluginMetadataContextKind, plugin_transform,
+        proxies::TransformPluginProgramMetadata,
+    },
 };
 
 struct DebugLabelTransformVisitor {
@@ -116,7 +118,7 @@ impl DebugLabelTransformVisitor {
                             span: DUMMY_SP,
                             expr: Box::new(create_debug_label_assign_expr((
                                 atom_name.clone(),
-                                SyntaxContext::default(),
+                                Default::default(),
                             ))),
                         })));
                         // export default expression
@@ -227,11 +229,14 @@ pub fn debug_label_transform(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swc_common::{chain, Mark};
-    use swc_core::ecma::visit::Fold;
-    use swc_ecma_parser::*;
-    use swc_ecma_transforms_base::resolver;
-    use swc_ecma_transforms_testing::test;
+    use swc_core::{
+        common::{chain, Mark},
+        ecma::{
+            transforms::{base::resolver, testing::test},
+            visit::{as_folder, Fold},
+        },
+    };
+    use swc_ecma_parser::Syntax;
 
     fn transform(path: Option<&Path>) -> impl Fold {
         chain!(
