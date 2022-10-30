@@ -1,5 +1,6 @@
-use std::path::PathBuf;
+use std::{fs::read_to_string, path::PathBuf};
 
+use common::parse_plugin_config;
 use swc_core::{
     common::{chain, Mark},
     ecma::transforms::{
@@ -14,6 +15,9 @@ use testing::fixture;
 
 #[fixture("tests/fixtures/**/input.js")]
 fn test(input: PathBuf) {
+    let config =
+        read_to_string(input.with_file_name("config.json")).expect("Failed to read config.json");
+    let config = parse_plugin_config(&config);
     let output = input.with_file_name("output.js");
 
     test_fixture(
@@ -27,7 +31,7 @@ fn test(input: PathBuf) {
 
             chain!(
                 resolver(unresolved_mark, top_level_mark, false),
-                debug_label(&PathBuf::from("atoms.ts")),
+                debug_label(config.clone(), &PathBuf::from("atoms.ts")),
                 react(
                     t.cm.clone(),
                     Some(t.comments.clone(),),

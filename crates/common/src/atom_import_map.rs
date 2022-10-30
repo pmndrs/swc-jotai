@@ -3,13 +3,22 @@ use swc_core::ecma::{ast::*, atoms::JsWord};
 
 use crate::ATOM_IMPORTS;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct AtomImportMap {
+    atom_names: Vec<JsWord>,
     imports: AHashSet<JsWord>,
     namespace_imports: AHashSet<JsWord>,
 }
 
 impl AtomImportMap {
+    pub fn new(atom_names: Vec<JsWord>) -> Self {
+        AtomImportMap {
+            atom_names,
+            imports: Default::default(),
+            namespace_imports: Default::default(),
+        }
+    }
+
     pub fn visit_import_decl(&mut self, import: &ImportDecl) {
         if !import.src.value.starts_with("jotai") {
             return;
@@ -54,7 +63,9 @@ impl AtomImportMap {
                 ..
             }) => self.is_atom_import(e),
             // Handles: const countAtom = atom(0);
-            Expr::Ident(i) => self.imports.get(&i.sym).is_some(),
+            Expr::Ident(i) => {
+                self.atom_names.contains(&i.sym) || self.imports.get(&i.sym).is_some()
+            }
             // Handles: const countAtom = jotai.atom(0);
             Expr::Member(MemberExpr {
                 obj,
