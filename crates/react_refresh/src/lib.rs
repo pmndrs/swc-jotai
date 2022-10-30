@@ -74,8 +74,8 @@ fn create_react_refresh_var_decl(
     }
 }
 
-fn create_cache_key(atom_name: &JsWord, path: &PathBuf) -> String {
-    path.clone().display().to_string() + "/" + &atom_name.clone().to_string().to_owned()
+fn create_cache_key(atom_name: &JsWord, path: &Path) -> String {
+    path.display().to_string() + "/" + atom_name
 }
 
 impl ReactRefreshTransformVisitor {
@@ -291,5 +291,253 @@ globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
 }
 import { atom } from "jotai";
 const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        multiple_atoms,
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);
+const doubleAtom = atom((get) => get(countAtom) * 2);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));
+const doubleAtom = globalThis.jotaiAtomCache.get("atoms.ts/doubleAtom", atom((get)=>get(countAtom) * 2));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        multiple_atoms_between_code,
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);
+let counter = 0;
+const increment = () => ++counter;
+const doubleAtom = atom((get) => get(countAtom) * 2);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));
+let counter = 0;
+const increment = () => ++counter;
+const doubleAtom = globalThis.jotaiAtomCache.get("atoms.ts/doubleAtom", atom((get)=>get(countAtom) * 2));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        import_alias,
+        r#"
+import { atom as blah } from "jotai";
+const countAtom = blah(0);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom as blah } from "jotai";
+const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", blah(0));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        ignore_non_jotai_imports,
+        r#"
+import React from "react";
+import { atom } from "jotai";
+import { defaultCount } from "./utils";
+const countAtom = atom(0);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import React from "react";
+import { atom } from "jotai";
+import { defaultCount } from "./utils";      
+const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        namespace_import,
+        r#"
+import * as jotai from "jotai";
+const countAtom = jotai.atom(0);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import * as jotai from "jotai";
+const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", jotai.atom(0));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        atom_from_another_package,
+        r#"
+import { atom } from "some-library";
+const countAtom = atom(0);"#,
+        r#"
+import { atom } from "some-library";
+const countAtom = atom(0);"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        no_jotai_import,
+        "const countAtom = atom(0);",
+        "const countAtom = atom(0);"
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        handle_default_export,
+        r#"
+import { atom } from "jotai";
+export default atom(0);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+export default globalThis.jotaiAtomCache.get("atoms.ts/atoms", atom(0));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(Some(Path::new("countAtom.ts"))),
+        handle_file_naming_default_export,
+        r#"
+import { atom } from "jotai";
+export default atom(0);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+export default globalThis.jotaiAtomCache.get("countAtom.ts/countAtom", atom(0));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(Some(Path::new("src/atoms/countAtom.ts"))),
+        handle_file_path_default_export,
+        r#"
+import { atom } from "jotai";
+export default atom(0);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+export default globalThis.jotaiAtomCache.get("src/atoms/countAtom.ts/countAtom", atom(0));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        jotai_utils_import,
+        r#"
+import { atomWithImmer } from "jotai/immer";
+import { atomWithMachine } from "jotai/xstate";
+const immerAtom = atomWithImmer(0);
+const toggleMachineAtom = atomWithMachine(() => toggleMachine);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atomWithImmer } from "jotai/immer";
+import { atomWithMachine } from "jotai/xstate";
+const immerAtom = globalThis.jotaiAtomCache.get("atoms.ts/immerAtom", atomWithImmer(0));
+const toggleMachineAtom = globalThis.jotaiAtomCache.get("atoms.ts/toggleMachineAtom", atomWithMachine(()=>toggleMachine));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None),
+        test_default_export,
+        r#"
+function fn() { return true; }
+        
+export default fn;"#,
+        r#"
+function fn() { return true; }
+                
+export default fn;"#
     );
 }
