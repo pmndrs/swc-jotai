@@ -13,7 +13,7 @@ use swc_core::{
         ast::*,
         atoms::JsWord,
         utils::{ModuleItemLike, StmtLike, StmtOrModuleItem},
-        visit::{as_folder, noop_visit_mut_type, FoldWith, VisitMut, VisitMutWith},
+        visit::{as_folder, noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
     },
     plugin::{
         metadata::TransformPluginMetadataContextKind, plugin_transform,
@@ -234,6 +234,10 @@ impl VisitMut for ReactRefreshTransformVisitor {
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
         self.visit_mut_stmt_like(stmts);
     }
+}
+
+pub fn react_refersh(path: &Path) -> impl Fold {
+    as_folder(ReactRefreshTransformVisitor::new(path))
 }
 
 #[plugin_transform]
