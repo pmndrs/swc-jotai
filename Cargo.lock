@@ -962,15 +962,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "react_refresh"
-version = "0.1.0"
-dependencies = [
- "common",
- "swc_core",
- "swc_ecma_parser",
-]
-
-[[package]]
 name = "redox_syscall"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1685,6 +1676,15 @@ dependencies = [
  "swc_ecma_transforms_react",
  "swc_ecma_transforms_testing",
  "testing",
+]
+
+[[package]]
+name = "swc_jotai_react_refresh"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "swc_core",
+ "swc_ecma_parser",
 ]
 
 [[package]]
