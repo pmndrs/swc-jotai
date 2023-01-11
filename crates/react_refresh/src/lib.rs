@@ -28,6 +28,7 @@ pub struct ReactRefreshTransformVisitor {
     refresh_atom_var_decl: Option<VarDeclarator>,
     #[allow(dead_code)]
     path: PathBuf,
+    exporting: bool,
 }
 
 fn create_react_refresh_call_expr(key: String, atom_expr: &CallExpr) -> Box<Expr> {
@@ -85,6 +86,7 @@ impl ReactRefreshTransformVisitor {
             current_var_declarator: None,
             refresh_atom_var_decl: None,
             path: path.to_owned(),
+            exporting: false,
         }
     }
 
@@ -97,6 +99,7 @@ impl ReactRefreshTransformVisitor {
         let mut is_atom_present: bool = false;
 
         for stmt in stmts.take() {
+            let exporting_old = self.exporting;
             let stmt = match stmt.into_stmt() {
                 Ok(mut stmt) => {
                     stmt.visit_mut_with(self);
@@ -136,6 +139,21 @@ impl ReactRefreshTransformVisitor {
                         );
                         continue;
                     }
+                    ModuleDecl::ExportDecl(mut export_decl) => {
+                        if let Decl::Var(mut var_decl) = export_decl.decl.clone() {
+                            if let [VarDeclarator {
+                                init: Some(init_expr),
+                                ..
+                            }] = var_decl.decls.as_mut_slice()
+                            {
+                                if self.atom_import_map.is_atom_import(&*init_expr) {
+                                    self.exporting = true;
+                                }
+                            }
+                        }
+                        export_decl.visit_mut_with(self);
+                        <T as ModuleItemLike>::try_from_module_decl(export_decl.into()).unwrap()
+                    }
                     _ => {
                         module_decl.visit_mut_with(self);
                         <T as ModuleItemLike>::try_from_module_decl(module_decl).unwrap()
@@ -150,14 +168,27 @@ impl ReactRefreshTransformVisitor {
 
             is_atom_present = true;
 
-            stmts_updated.push(<T as StmtOrModuleItem>::from_stmt(Stmt::Decl(Decl::Var(
-                Box::new(VarDecl {
-                    span: DUMMY_SP,
-                    kind: VarDeclKind::Const,
-                    declare: false,
-                    decls: vec![self.refresh_atom_var_decl.take().unwrap()],
-                }),
-            ))))
+            let updated_decl = Decl::Var(Box::new(VarDecl {
+                span: DUMMY_SP,
+                kind: VarDeclKind::Const,
+                declare: false,
+                decls: vec![self.refresh_atom_var_decl.take().unwrap()],
+            }));
+
+            if self.exporting {
+                stmts_updated.push(
+                    <T as StmtOrModuleItem>::try_from_module_decl(ModuleDecl::ExportDecl(
+                        ExportDecl {
+                            span: DUMMY_SP,
+                            decl: updated_decl,
+                        },
+                    ))
+                    .unwrap(),
+                )
+            } else {
+                stmts_updated.push(<T as StmtOrModuleItem>::from_stmt(Stmt::Decl(updated_decl)))
+            }
+            self.exporting = exporting_old;
         }
 
         if is_atom_present {
@@ -576,5 +607,51 @@ globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   },
 }
 const myCustomAtom = globalThis.jotaiAtomCache.get("atoms.ts/myCustomAtom", customAtom(0));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None, None),
+        exported_atom,
+        r#"
+import { atom } from "jotai";
+export const countAtom = atom(0);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+    cache: new Map(),
+    get(name, inst) { 
+      if (this.cache.has(name)) {
+        return this.cache.get(name)
+      }
+      this.cache.set(name, inst)
+      return inst
+    },
+}        
+import { atom } from "jotai";
+export const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None, None),
+        multiple_exported_atoms,
+        r#"
+import { atom } from "jotai";
+export const countAtom = atom(0);
+export const doubleAtom = atom((get) => get(countAtom) * 2);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+export const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));
+export const doubleAtom = globalThis.jotaiAtomCache.get("atoms.ts/doubleAtom", atom((get)=>get(countAtom) * 2));"#
     );
 }
