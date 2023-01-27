@@ -29,6 +29,7 @@ pub struct ReactRefreshTransformVisitor {
     #[allow(dead_code)]
     path: PathBuf,
     exporting: bool,
+    top_level: bool,
 }
 
 fn create_react_refresh_call_expr(key: String, atom_expr: &CallExpr) -> Box<Expr> {
@@ -87,6 +88,7 @@ impl ReactRefreshTransformVisitor {
             refresh_atom_var_decl: None,
             path: path.to_owned(),
             exporting: false,
+            top_level: false,
         }
     }
 
@@ -222,6 +224,10 @@ impl VisitMut for ReactRefreshTransformVisitor {
     }
 
     fn visit_mut_var_declarator(&mut self, var_declarator: &mut VarDeclarator) {
+        if !self.top_level {
+            return;
+        }
+
         let old_var_declarator = self.current_var_declarator.take();
 
         self.current_var_declarator = if let Pat::Ident(BindingIdent {
@@ -259,11 +265,14 @@ impl VisitMut for ReactRefreshTransformVisitor {
     }
 
     fn visit_mut_module_items(&mut self, items: &mut Vec<ModuleItem>) {
+        self.top_level = true;
         self.visit_mut_stmt_like(items);
     }
 
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
+        self.top_level = false;
         self.visit_mut_stmt_like(stmts);
+        self.top_level = true;
     }
 }
 
@@ -653,5 +662,53 @@ globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
 import { atom } from "jotai";
 export const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));
 export const doubleAtom = globalThis.jotaiAtomCache.get("atoms.ts/doubleAtom", atom((get)=>get(countAtom) * 2));"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None, None),
+        ignore_non_top_level_atoms,
+        r#"
+import { atom } from "jotai";
+function createAtom(ov) {
+  const valueAtom = atom(ov);
+  const observableValueAtom = atom((get) => {
+    const value = get(valueAtom);
+    return value;
+  },
+  (_get, set, nextValue) => {
+    set(valueAtom, nextValue);
+  });
+  return observableValueAtom;
+}
+
+const value1Atom = createAtom('Hello String!');
+const countAtom = atom(0);"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}        
+import { atom } from "jotai";
+function createAtom(ov) {
+  const valueAtom = atom(ov);
+  const observableValueAtom = atom((get) => {
+    const value = get(valueAtom);
+    return value;
+  },
+  (_get, set, nextValue) => {
+    set(valueAtom, nextValue);
+  });
+  return observableValueAtom;
+}
+
+const value1Atom = createAtom('Hello String!');
+const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));"#
     );
 }
