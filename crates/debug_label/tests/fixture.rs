@@ -3,13 +3,16 @@ use std::{fs::read_to_string, path::PathBuf};
 use common::parse_plugin_config;
 use swc_core::{
     common::{chain, Mark},
-    ecma::transforms::{
-        base::resolver,
-        react::{react, Options, RefreshOptions},
-        testing::test_fixture,
+    ecma::{
+        parser::{EsConfig, Syntax},
+        transforms::{
+            base::resolver,
+            compat::es2015,
+            react::{react, Options, RefreshOptions},
+            testing::test_fixture,
+        },
     },
 };
-use swc_ecma_parser::{EsConfig, Syntax};
 use swc_jotai_debug_label::debug_label;
 use testing::fixture;
 
@@ -46,7 +49,7 @@ fn test(input: PathBuf) {
                     },
                     top_level_mark
                 ),
-                swc_ecma_transforms_compat::es2015(
+                es2015(
                     unresolved_mark,
                     Some(t.comments.clone()),
                     Default::default()

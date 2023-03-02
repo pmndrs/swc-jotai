@@ -309,9 +309,9 @@ mod tests {
         ecma::{
             transforms::{base::resolver, testing::test},
             visit::{as_folder, Fold},
+            parser::Syntax,
         },
     };
-    use swc_ecma_parser::Syntax;
 
     fn transform(config: Option<Config>, path: Option<&Path>) -> impl Fold {
         chain!(

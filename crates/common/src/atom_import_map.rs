@@ -1,5 +1,7 @@
-use swc_common::collections::AHashSet;
-use swc_core::ecma::{ast::*, atoms::JsWord};
+use swc_core::{
+    common::collections::AHashSet,
+    ecma::{ast::*, atoms::JsWord},
+};
 
 use crate::ATOM_IMPORTS;
 
