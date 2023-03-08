@@ -1,2 +1,2 @@
-var myCustomAtom = customAtom(0);
+const myCustomAtom = customAtom(0);
 myCustomAtom.debugLabel = "myCustomAtom";

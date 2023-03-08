@@ -1,21 +1,27 @@
 import { Provider } from "jotai";
-function MyApp(param) {
-    var Component = param.Component, pageProps = param.pageProps;
-    return /*#__PURE__*/ React.createElement(Provider, {
+function MyApp({ Component, pageProps }) {
+  return /*#__PURE__*/ React.createElement(
+    Provider,
+    {
+      __source: {
+        fileName: "input.js",
+        lineNumber: 5,
+        columnNumber: 5,
+      },
+      __self: this,
+    },
+    /*#__PURE__*/ React.createElement(
+      Component,
+      _extends({}, pageProps, {
         __source: {
-            fileName: "input.js",
-            lineNumber: 5,
-            columnNumber: 5
+          fileName: "input.js",
+          lineNumber: 6,
+          columnNumber: 7,
         },
-        __self: this
-    }, /*#__PURE__*/ React.createElement(Component, _extends({}, pageProps, {
-        __source: {
-            fileName: "input.js",
-            lineNumber: 6,
-            columnNumber: 7
-        },
-        __self: this
-    })));
+        __self: this,
+      })
+    )
+  );
 }
 _c = MyApp;
 export default MyApp;
