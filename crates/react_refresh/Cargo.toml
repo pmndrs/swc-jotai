@@ -23,5 +23,4 @@ swc_core = { version = "0.59.40", features = [
   "ecma_transforms_react",
   "testing_transform", 
 ] }
-swc_ecma_transforms_base = "0.120.5"
 testing = "0.31.37"
