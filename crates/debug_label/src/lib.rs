@@ -239,11 +239,11 @@ mod tests {
     use swc_core::{
         common::{chain, Mark},
         ecma::{
+            parser::Syntax,
             transforms::{base::resolver, testing::test},
             visit::{as_folder, Fold},
         },
     };
-    use swc_ecma_parser::Syntax;
 
     fn transform(config: Option<Config>, path: Option<&Path>) -> impl Fold {
         chain!(
