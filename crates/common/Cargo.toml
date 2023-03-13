@@ -9,7 +9,7 @@ edition = "2021"
 [dependencies]
 lazy_static = "1.4.0"
 regex = "1.7.1"
-serde = "1.0.153"
+serde = "1.0.155"
 serde_json = "1.0.94"
-swc_common = "0.29.35"
-swc_core = { version = "0.59.40", features = ["ecma_ast"] }
+swc_common = "0.29.37"
+swc_core = { version = "0.69.4", features = ["ecma_ast"] }

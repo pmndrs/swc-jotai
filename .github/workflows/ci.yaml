@@ -18,7 +18,6 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
           profile: minimal
           components: rustfmt
       - name: Run cargo fmt
@@ -30,7 +29,6 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
           profile: minimal
           components: clippy
       - name: Check
@@ -42,7 +40,6 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
           profile: minimal
           target: wasm32-wasi
       - name: Run cargo check
@@ -54,7 +51,6 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
           profile: minimal
           target: wasm32-wasi
       - name: Run cargo test

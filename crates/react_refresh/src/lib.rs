@@ -77,7 +77,7 @@ fn create_react_refresh_var_decl(
 }
 
 fn create_cache_key(atom_name: &JsWord, path: &Path) -> String {
-    path.display().to_string() + "/" + atom_name
+    format!("{}/{}", path.display(), atom_name)
 }
 
 impl ReactRefreshTransformVisitor {
