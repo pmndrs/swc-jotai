@@ -1,6 +1,6 @@
 {
   "name": "@swc-jotai/debug-label",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "SWC plugin for automatic jotai atom debug labels",
   "author": "Mathis Møller",
   "license": "MIT",
