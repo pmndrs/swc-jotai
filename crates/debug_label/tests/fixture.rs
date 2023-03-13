@@ -2,7 +2,7 @@ use std::{fs::read_to_string, path::PathBuf};
 
 use common::parse_plugin_config;
 use swc_core::{
-    common::{chain, Mark},
+    common::{chain, FileName, Mark},
     ecma::parser::{EsConfig, Syntax},
     ecma::transforms::{
         base::resolver,
@@ -31,7 +31,7 @@ fn test(input: PathBuf) {
 
             chain!(
                 resolver(unresolved_mark, top_level_mark, false),
-                debug_label(config.clone(), &PathBuf::from("atoms.ts")),
+                debug_label(config.clone(), FileName::Real("atoms.ts".parse().unwrap())),
                 react(
                     t.cm.clone(),
                     Some(t.comments.clone(),),

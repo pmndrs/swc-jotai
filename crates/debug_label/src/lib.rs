@@ -1,14 +1,9 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use std::{
-    ffi::OsStr,
-    path::{Path, PathBuf},
-};
-
-use common::{convert_path_to_posix, parse_plugin_config, AtomImportMap, Config};
+use common::{parse_plugin_config, AtomImportMap, Config};
 use swc_core::{
-    common::util::take::Take,
     common::DUMMY_SP,
+    common::{util::take::Take, FileName},
     ecma::{
         ast::*,
         atoms::JsWord,
@@ -25,7 +20,7 @@ struct DebugLabelTransformVisitor {
     atom_import_map: AtomImportMap,
     current_var_declarator: Option<Id>,
     debug_label_expr: Option<Expr>,
-    path: PathBuf,
+    file_name: FileName,
 }
 
 fn create_debug_label_assign_expr(atom_name_id: Id) -> Expr {
@@ -55,12 +50,12 @@ fn create_debug_label_assign_expr(atom_name_id: Id) -> Expr {
 }
 
 impl DebugLabelTransformVisitor {
-    pub fn new(config: Config, path: &Path) -> Self {
+    pub fn new(config: Config, file_name: FileName) -> Self {
         Self {
             atom_import_map: AtomImportMap::new(config.atom_names),
             current_var_declarator: None,
             debug_label_expr: None,
-            path: path.to_owned(),
+            file_name,
         }
     }
 }
@@ -90,12 +85,15 @@ impl DebugLabelTransformVisitor {
                             continue;
                         }
 
-                        let atom_name: JsWord = self
-                            .path
-                            .file_stem()
-                            .unwrap_or_else(|| OsStr::new("default_atom"))
-                            .to_string_lossy()
-                            .into();
+                        let atom_name: JsWord = match &self.file_name {
+                            FileName::Real(real_file_name) => {
+                                real_file_name.file_stem().map_or_else(
+                                    || "default_atom".into(),
+                                    |real_file_name| real_file_name.to_string_lossy().into(),
+                                )
+                            }
+                            _ => "default_atom".into(),
+                        };
 
                         // Variable declaration
                         stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Decl(Decl::Var(
@@ -208,8 +206,8 @@ impl VisitMut for DebugLabelTransformVisitor {
     }
 }
 
-pub fn debug_label(config: Config, path: &Path) -> impl Fold {
-    as_folder(DebugLabelTransformVisitor::new(config, path))
+pub fn debug_label(config: Config, file_name: FileName) -> impl Fold {
+    as_folder(DebugLabelTransformVisitor::new(config, file_name))
 }
 
 #[plugin_transform]
@@ -222,19 +220,19 @@ pub fn debug_label_transform(
             .get_transform_plugin_config()
             .expect("Failed to get plugin config for @swc-jotai/debug-label"),
     );
-    let file_name = convert_path_to_posix(
-        &metadata
-            .get_context(&TransformPluginMetadataContextKind::Filename)
-            .unwrap_or_default(),
-    );
-    let path = Path::new(&file_name);
+    let file_name = match &metadata.get_context(&TransformPluginMetadataContextKind::Filename) {
+        Some(file_name) => FileName::Real(file_name.into()),
+        None => FileName::Anon,
+    };
     program.fold_with(&mut as_folder(DebugLabelTransformVisitor::new(
-        config, path,
+        config, file_name,
     )))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use swc_core::{
         common::{chain, Mark},
@@ -245,12 +243,12 @@ mod tests {
         },
     };
 
-    fn transform(config: Option<Config>, path: Option<&Path>) -> impl Fold {
+    fn transform(config: Option<Config>, file_name: Option<FileName>) -> impl Fold {
         chain!(
             resolver(Mark::new(), Mark::new(), false),
             as_folder(DebugLabelTransformVisitor::new(
                 config.unwrap_or_default(),
-                path.unwrap_or(&PathBuf::from("atoms.ts"))
+                file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts")))
             ))
         )
     }
@@ -396,7 +394,7 @@ export default atoms;"#
 
     test!(
         Syntax::default(),
-        |_| transform(None, Some(Path::new("countAtom.ts"))),
+        |_| transform(None, Some(FileName::Real("countAtom.ts".parse().unwrap()))),
         handle_file_naming_default_export,
         r#"
 import { atom } from "jotai";
@@ -410,7 +408,10 @@ export default countAtom;"#
 
     test!(
         Syntax::default(),
-        |_| transform(None, Some(Path::new("src/atoms/countAtom.ts"))),
+        |_| transform(
+            None,
+            Some(FileName::Real("src/atoms/countAtom.ts".parse().unwrap()))
+        ),
         handle_file_path_default_export,
         r#"
 import { atom } from "jotai";

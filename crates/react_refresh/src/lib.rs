@@ -1,14 +1,9 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use std::{
-    ffi::OsStr,
-    path::{Path, PathBuf},
-};
-
-use common::{convert_path_to_posix, parse_plugin_config, AtomImportMap, Config};
+use common::{parse_plugin_config, AtomImportMap, Config};
 use swc_core::{
-    common::util::take::Take,
     common::DUMMY_SP,
+    common::{util::take::Take, FileName},
     ecma::{
         ast::*,
         atoms::JsWord,
@@ -27,7 +22,7 @@ pub struct ReactRefreshTransformVisitor {
     current_var_declarator: Option<Id>,
     refresh_atom_var_decl: Option<VarDeclarator>,
     #[allow(dead_code)]
-    path: PathBuf,
+    file_name: FileName,
     exporting: bool,
     top_level: bool,
 }
@@ -76,17 +71,20 @@ fn create_react_refresh_var_decl(
     }
 }
 
-fn create_cache_key(atom_name: &JsWord, path: &Path) -> String {
-    format!("{}/{}", path.display(), atom_name)
+fn create_cache_key(atom_name: &JsWord, file_name: &FileName) -> String {
+    match file_name {
+        FileName::Real(real_file_name) => format!("{}/{}", real_file_name.display(), atom_name),
+        _ => atom_name.to_string(),
+    }
 }
 
 impl ReactRefreshTransformVisitor {
-    pub fn new(config: Config, path: &Path) -> Self {
+    pub fn new(config: Config, file_name: FileName) -> Self {
         Self {
             atom_import_map: AtomImportMap::new(config.atom_names),
             current_var_declarator: None,
             refresh_atom_var_decl: None,
-            path: path.to_owned(),
+            file_name,
             exporting: false,
             top_level: false,
         }
@@ -119,19 +117,22 @@ impl ReactRefreshTransformVisitor {
                         }
                         is_atom_present = true;
 
-                        let atom_name: JsWord = self
-                            .path
-                            .file_stem()
-                            .unwrap_or_else(|| OsStr::new("default_atom"))
-                            .to_string_lossy()
-                            .into();
+                        let atom_name: JsWord = match &self.file_name {
+                            FileName::Real(real_file_name) => {
+                                real_file_name.file_stem().map_or_else(
+                                    || "default_atom".into(),
+                                    |real_file_name| real_file_name.to_string_lossy().into(),
+                                )
+                            }
+                            _ => "default_atom".into(),
+                        };
 
                         // export default expression
                         stmts_updated.push(
                             <T as ModuleItemLike>::try_from_module_decl(
                                 ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
                                     expr: create_react_refresh_call_expr(
-                                        create_cache_key(&atom_name, &self.path),
+                                        create_cache_key(&atom_name, &self.file_name),
                                         default_export.expr.as_call().unwrap(),
                                     ),
                                     span: DUMMY_SP,
@@ -257,7 +258,7 @@ impl VisitMut for ReactRefreshTransformVisitor {
             if self.atom_import_map.is_atom_import(expr) {
                 self.refresh_atom_var_decl = Some(create_react_refresh_var_decl(
                     atom_name.clone(),
-                    create_cache_key(&atom_name.0, &self.path),
+                    create_cache_key(&atom_name.0, &self.file_name),
                     call_expr,
                 ))
             }
@@ -276,8 +277,8 @@ impl VisitMut for ReactRefreshTransformVisitor {
     }
 }
 
-pub fn react_refresh(config: Config, path: &Path) -> impl Fold {
-    as_folder(ReactRefreshTransformVisitor::new(config, path))
+pub fn react_refresh(config: Config, file_name: FileName) -> impl Fold {
+    as_folder(ReactRefreshTransformVisitor::new(config, file_name))
 }
 
 #[plugin_transform]
@@ -290,19 +291,19 @@ pub fn react_refresh_transform(
             .get_transform_plugin_config()
             .expect("Failed to get plugin config for @swc-jotai/debug-label"),
     );
-    let file_name = convert_path_to_posix(
-        &metadata
-            .get_context(&TransformPluginMetadataContextKind::Filename)
-            .unwrap_or_default(),
-    );
-    let path = Path::new(&file_name);
+    let file_name = match &metadata.get_context(&TransformPluginMetadataContextKind::Filename) {
+        Some(file_name) => FileName::Real(file_name.into()),
+        None => FileName::Anon,
+    };
     program.fold_with(&mut as_folder(ReactRefreshTransformVisitor::new(
-        config, path,
+        config, file_name,
     )))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use swc_core::{
         common::{chain, Mark},
@@ -313,12 +314,12 @@ mod tests {
         },
     };
 
-    fn transform(config: Option<Config>, path: Option<&Path>) -> impl Fold {
+    fn transform(config: Option<Config>, file_name: Option<FileName>) -> impl Fold {
         chain!(
             resolver(Mark::new(), Mark::new(), false),
             as_folder(ReactRefreshTransformVisitor::new(
                 config.unwrap_or_default(),
-                path.unwrap_or(&PathBuf::from("atoms.ts"))
+                file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts")))
             ))
         )
     }
@@ -511,7 +512,7 @@ export default globalThis.jotaiAtomCache.get("atoms.ts/atoms", atom(0));"#
 
     test!(
         Syntax::default(),
-        |_| transform(None, Some(Path::new("countAtom.ts"))),
+        |_| transform(None, Some(FileName::Real("countAtom.ts".parse().unwrap()))),
         handle_file_naming_default_export,
         r#"
 import { atom } from "jotai";
@@ -533,7 +534,10 @@ export default globalThis.jotaiAtomCache.get("countAtom.ts/countAtom", atom(0));
 
     test!(
         Syntax::default(),
-        |_| transform(None, Some(Path::new("src/atoms/countAtom.ts"))),
+        |_| transform(
+            None,
+            Some(FileName::Real("src/atoms/countAtom.ts".parse().unwrap()))
+        ),
         handle_file_path_default_export,
         r#"
 import { atom } from "jotai";
