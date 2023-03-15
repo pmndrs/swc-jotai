@@ -7,7 +7,7 @@ use swc_core::{
     ecma::{
         ast::*,
         atoms::JsWord,
-        utils::{ModuleItemLike, StmtLike, StmtOrModuleItem},
+        utils::{ModuleItemLike, StmtLike},
         visit::{as_folder, noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
     },
     plugin::{
@@ -93,74 +93,84 @@ impl ReactRefreshTransformVisitor {
     fn visit_mut_stmt_like<T>(&mut self, stmts: &mut Vec<T>)
     where
         Vec<T>: VisitMutWith<Self>,
-        T: VisitMutWith<Self> + StmtLike + ModuleItemLike + StmtOrModuleItem,
+        T: VisitMutWith<Self> + StmtLike + ModuleItemLike,
     {
         let mut stmts_updated: Vec<T> = Vec::with_capacity(stmts.len());
         let mut is_atom_present: bool = false;
 
         for stmt in stmts.take() {
             let exporting_old = self.exporting;
-            let stmt = match stmt.into_stmt() {
+            let stmt = match stmt.try_into_stmt() {
                 Ok(mut stmt) => {
                     stmt.visit_mut_with(self);
                     <T as StmtLike>::from_stmt(stmt)
                 }
-                Err(mut module_decl) => match module_decl {
-                    ModuleDecl::ExportDefaultExpr(mut default_export) => {
-                        if !self.atom_import_map.is_atom_import(&default_export.expr) {
-                            default_export.visit_mut_with(self);
-                            stmts_updated.push(
-                                <T as ModuleItemLike>::try_from_module_decl(default_export.into())
-                                    .unwrap(),
-                            );
-                            continue;
-                        }
-                        is_atom_present = true;
-
-                        let atom_name: JsWord = match &self.file_name {
-                            FileName::Real(real_file_name) => {
-                                real_file_name.file_stem().map_or_else(
-                                    || "default_atom".into(),
-                                    |real_file_name| real_file_name.to_string_lossy().into(),
-                                )
-                            }
-                            _ => "default_atom".into(),
-                        };
-
-                        // export default expression
-                        stmts_updated.push(
-                            <T as ModuleItemLike>::try_from_module_decl(
-                                ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
-                                    expr: create_react_refresh_call_expr(
-                                        create_cache_key(&atom_name, &self.file_name),
-                                        default_export.expr.as_call().unwrap(),
-                                    ),
-                                    span: DUMMY_SP,
-                                }),
-                            )
-                            .unwrap(),
-                        );
-                        continue;
-                    }
-                    ModuleDecl::ExportDecl(mut export_decl) => {
-                        if let Decl::Var(mut var_decl) = export_decl.decl.clone() {
-                            if let [VarDeclarator {
-                                init: Some(init_expr),
-                                ..
-                            }] = var_decl.decls.as_mut_slice()
-                            {
-                                if self.atom_import_map.is_atom_import(&*init_expr) {
-                                    self.exporting = true;
+                Err(node) => match node.try_into_module_decl() {
+                    Ok(mut module_decl) => {
+                        match module_decl {
+                            ModuleDecl::ExportDefaultExpr(mut default_export) => {
+                                if !self.atom_import_map.is_atom_import(&default_export.expr) {
+                                    default_export.visit_mut_with(self);
+                                    stmts_updated.push(
+                                        <T as ModuleItemLike>::try_from_module_decl(
+                                            default_export.into(),
+                                        )
+                                        .unwrap(),
+                                    );
+                                    continue;
                                 }
+                                is_atom_present = true;
+
+                                let atom_name: JsWord = match &self.file_name {
+                                    FileName::Real(real_file_name) => {
+                                        real_file_name.file_stem().map_or_else(
+                                            || "default_atom".into(),
+                                            |real_file_name| {
+                                                real_file_name.to_string_lossy().into()
+                                            },
+                                        )
+                                    }
+                                    _ => "default_atom".into(),
+                                };
+
+                                // export default expression
+                                stmts_updated.push(
+                                    <T as ModuleItemLike>::try_from_module_decl(
+                                        ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
+                                            expr: create_react_refresh_call_expr(
+                                                create_cache_key(&atom_name, &self.file_name),
+                                                default_export.expr.as_call().unwrap(),
+                                            ),
+                                            span: DUMMY_SP,
+                                        }),
+                                    )
+                                    .unwrap(),
+                                );
+                                continue;
+                            }
+                            ModuleDecl::ExportDecl(mut export_decl) => {
+                                if let Decl::Var(mut var_decl) = export_decl.decl.clone() {
+                                    if let [VarDeclarator {
+                                        init: Some(init_expr),
+                                        ..
+                                    }] = var_decl.decls.as_mut_slice()
+                                    {
+                                        if self.atom_import_map.is_atom_import(&*init_expr) {
+                                            self.exporting = true;
+                                        }
+                                    }
+                                }
+                                export_decl.visit_mut_with(self);
+                                <T as ModuleItemLike>::try_from_module_decl(export_decl.into())
+                                    .unwrap()
+                            }
+                            _ => {
+                                module_decl.visit_mut_with(self);
+                                <T as ModuleItemLike>::try_from_module_decl(module_decl).unwrap()
                             }
                         }
-                        export_decl.visit_mut_with(self);
-                        <T as ModuleItemLike>::try_from_module_decl(export_decl.into()).unwrap()
                     }
-                    _ => {
-                        module_decl.visit_mut_with(self);
-                        <T as ModuleItemLike>::try_from_module_decl(module_decl).unwrap()
-                    }
+                    Err(..) => unreachable!(),
                 },
             };
 
@@ -180,7 +190,7 @@ impl ReactRefreshTransformVisitor {
 
             if self.exporting {
                 stmts_updated.push(
-                    <T as StmtOrModuleItem>::try_from_module_decl(ModuleDecl::ExportDecl(
+                    <T as ModuleItemLike>::try_from_module_decl(ModuleDecl::ExportDecl(
                         ExportDecl {
                             span: DUMMY_SP,
                             decl: updated_decl,
@@ -189,7 +199,7 @@ impl ReactRefreshTransformVisitor {
                     .unwrap(),
                 )
             } else {
-                stmts_updated.push(<T as StmtOrModuleItem>::from_stmt(Stmt::Decl(updated_decl)))
+                stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Decl(updated_decl)))
             }
             self.exporting = exporting_old;
         }

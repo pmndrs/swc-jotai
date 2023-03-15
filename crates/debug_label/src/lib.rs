@@ -7,7 +7,7 @@ use swc_core::{
     ecma::{
         ast::*,
         atoms::JsWord,
-        utils::{ModuleItemLike, StmtLike, StmtOrModuleItem},
+        utils::{ModuleItemLike, StmtLike},
         visit::{as_folder, noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
     },
     plugin::{
@@ -64,81 +64,99 @@ impl DebugLabelTransformVisitor {
     fn visit_mut_stmt_like<T>(&mut self, stmts: &mut Vec<T>)
     where
         Vec<T>: VisitMutWith<Self>,
-        T: VisitMutWith<Self> + StmtLike + ModuleItemLike + StmtOrModuleItem,
+        T: VisitMutWith<Self> + StmtLike + ModuleItemLike,
     {
         let mut stmts_updated: Vec<T> = Vec::with_capacity(stmts.len());
 
         for stmt in stmts.take() {
-            let stmt = match stmt.into_stmt() {
+            let stmt = match stmt.try_into_stmt() {
                 Ok(mut stmt) => {
                     stmt.visit_mut_with(self);
                     <T as StmtLike>::from_stmt(stmt)
                 }
-                Err(mut module_decl) => match module_decl {
-                    ModuleDecl::ExportDefaultExpr(mut default_export) => {
-                        if !self.atom_import_map.is_atom_import(&default_export.expr) {
-                            default_export.visit_mut_with(self);
-                            stmts_updated.push(
-                                <T as ModuleItemLike>::try_from_module_decl(default_export.into())
-                                    .unwrap(),
-                            );
-                            continue;
-                        }
+                Err(node) => match node.try_into_module_decl() {
+                    Ok(mut module_decl) => {
+                        match module_decl {
+                            ModuleDecl::ExportDefaultExpr(mut default_export) => {
+                                if !self.atom_import_map.is_atom_import(&default_export.expr) {
+                                    default_export.visit_mut_with(self);
+                                    stmts_updated.push(
+                                        <T as ModuleItemLike>::try_from_module_decl(
+                                            default_export.into(),
+                                        )
+                                        .unwrap(),
+                                    );
+                                    continue;
+                                }
 
-                        let atom_name: JsWord = match &self.file_name {
-                            FileName::Real(real_file_name) => {
-                                real_file_name.file_stem().map_or_else(
-                                    || "default_atom".into(),
-                                    |real_file_name| real_file_name.to_string_lossy().into(),
-                                )
-                            }
-                            _ => "default_atom".into(),
-                        };
+                                let atom_name: JsWord = match &self.file_name {
+                                    FileName::Real(real_file_name) => {
+                                        if let Some(file_stem) =
+                                            real_file_name.file_stem().map(|s| s.to_string_lossy())
+                                        {
+                                            file_stem.into()
+                                        } else {
+                                            real_file_name
+                                                .parent()
+                                                .unwrap()
+                                                .join("default_atom")
+                                                .display()
+                                                .to_string()
+                                                .into()
+                                        }
+                                    }
+                                    _ => "default_atom".into(),
+                                };
 
-                        // Variable declaration
-                        stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Decl(Decl::Var(
-                            Box::new(VarDecl {
-                                declare: Default::default(),
-                                decls: vec![VarDeclarator {
-                                    definite: false,
-                                    init: Some(default_export.expr),
-                                    name: Pat::Ident(
-                                        Ident::new(atom_name.clone(), DUMMY_SP).into(),
-                                    ),
-                                    span: DUMMY_SP,
-                                }],
-                                kind: VarDeclKind::Const,
-                                span: DUMMY_SP,
-                            }),
-                        ))));
-                        // Assign debug label
-                        stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Expr(ExprStmt {
-                            span: DUMMY_SP,
-                            expr: Box::new(create_debug_label_assign_expr((
-                                atom_name.clone(),
-                                Default::default(),
-                            ))),
-                        })));
-                        // export default expression
-                        stmts_updated.push(
-                            <T as ModuleItemLike>::try_from_module_decl(
-                                ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
-                                    expr: Box::new(Expr::Ident(Ident {
-                                        sym: atom_name.clone(),
+                                // Variable declaration
+                                stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Decl(
+                                    Decl::Var(Box::new(VarDecl {
+                                        declare: Default::default(),
+                                        decls: vec![VarDeclarator {
+                                            definite: false,
+                                            init: Some(default_export.expr),
+                                            name: Pat::Ident(
+                                                Ident::new(atom_name.clone(), DUMMY_SP).into(),
+                                            ),
+                                            span: DUMMY_SP,
+                                        }],
+                                        kind: VarDeclKind::Const,
                                         span: DUMMY_SP,
-                                        optional: false,
                                     })),
-                                    span: DUMMY_SP,
-                                }),
-                            )
-                            .unwrap(),
-                        );
-                        continue;
+                                )));
+                                // Assign debug label
+                                stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Expr(
+                                    ExprStmt {
+                                        span: DUMMY_SP,
+                                        expr: Box::new(create_debug_label_assign_expr((
+                                            atom_name.clone(),
+                                            Default::default(),
+                                        ))),
+                                    },
+                                )));
+                                // export default expression
+                                stmts_updated.push(
+                                    <T as ModuleItemLike>::try_from_module_decl(
+                                        ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
+                                            expr: Box::new(Expr::Ident(Ident {
+                                                sym: atom_name.clone(),
+                                                span: DUMMY_SP,
+                                                optional: false,
+                                            })),
+                                            span: DUMMY_SP,
+                                        }),
+                                    )
+                                    .unwrap(),
+                                );
+                                continue;
+                            }
+                            _ => {
+                                module_decl.visit_mut_with(self);
+                                <T as ModuleItemLike>::try_from_module_decl(module_decl).unwrap()
+                            }
+                        }
                     }
-                    _ => {
-                        module_decl.visit_mut_with(self);
-                        <T as ModuleItemLike>::try_from_module_decl(module_decl).unwrap()
-                    }
+                    Err(..) => unreachable!(),
                 },
             };
             stmts_updated.push(stmt);
@@ -147,7 +165,7 @@ impl DebugLabelTransformVisitor {
                 continue;
             }
 
-            stmts_updated.push(<T as StmtOrModuleItem>::from_stmt(Stmt::Expr(ExprStmt {
+            stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Expr(ExprStmt {
                 span: DUMMY_SP,
                 expr: Box::new(self.debug_label_expr.take().unwrap()),
             })))
@@ -484,5 +502,18 @@ const myCustomAtom = customAtom(0);"#,
         r#"
 const myCustomAtom = customAtom(0);
 myCustomAtom.debugLabel = "myCustomAtom";"#
+    );
+
+    test!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Anon)),
+        filename_anon,
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);"#,
+        r#"
+import { atom } from "jotai";
+const countAtom = atom(0);
+countAtom.debugLabel = "countAtom";"#
     );
 }
