@@ -7,6 +7,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde = "1.0.156"
-serde_json = "1.0.94"
-swc_core = { version = "0.69.5", features = ["common", "ecma_ast"] }
+serde = "1.0.160"
+serde_json = "1.0.96"
+swc_core = { version = "0.75.42", features = ["common", "ecma_ast"] }
