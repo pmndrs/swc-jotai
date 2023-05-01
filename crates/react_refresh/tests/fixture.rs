@@ -44,7 +44,8 @@ fn test(input: PathBuf) {
                         }),
                         ..Default::default()
                     },
-                    top_level_mark
+                    top_level_mark,
+                    unresolved_mark
                 ),
             )
         },
