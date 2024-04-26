@@ -258,7 +258,7 @@ mod tests {
             parser::Syntax,
             transforms::{
                 base::resolver,
-                testing::{test, test_inline}
+                testing::{test, test_inline},
             },
             visit::{as_folder, Fold},
         },
