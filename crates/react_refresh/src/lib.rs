@@ -319,7 +319,10 @@ mod tests {
         common::{chain, Mark},
         ecma::{
             parser::Syntax,
-            transforms::{base::resolver, testing::test},
+            transforms::{
+                base::resolver,
+                testing::{test, test_inline},
+            },
             visit::{as_folder, Fold},
         },
     };
@@ -334,7 +337,7 @@ mod tests {
         )
     }
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         basic,
@@ -356,7 +359,7 @@ import { atom } from "jotai";
 const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         multiple_atoms,
@@ -380,7 +383,7 @@ const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));
 const doubleAtom = globalThis.jotaiAtomCache.get("atoms.ts/doubleAtom", atom((get)=>get(countAtom) * 2));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         multiple_atoms_between_code,
@@ -408,7 +411,7 @@ const increment = () => ++counter;
 const doubleAtom = globalThis.jotaiAtomCache.get("atoms.ts/doubleAtom", atom((get)=>get(countAtom) * 2));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         import_alias,
@@ -430,7 +433,7 @@ import { atom as blah } from "jotai";
 const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", blah(0));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         ignore_non_jotai_imports,
@@ -456,7 +459,7 @@ import { defaultCount } from "./utils";
 const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         namespace_import,
@@ -478,7 +481,7 @@ import * as jotai from "jotai";
 const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", jotai.atom(0));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         atom_from_another_package,
@@ -490,7 +493,7 @@ import { atom } from "some-library";
 const countAtom = atom(0);"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         no_jotai_import,
@@ -498,7 +501,7 @@ const countAtom = atom(0);"#
         "const countAtom = atom(0);"
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         handle_default_export,
@@ -520,7 +523,7 @@ import { atom } from "jotai";
 export default globalThis.jotaiAtomCache.get("atoms.ts/atoms", atom(0));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, Some(FileName::Real("countAtom.ts".parse().unwrap()))),
         handle_file_naming_default_export,
@@ -542,7 +545,7 @@ import { atom } from "jotai";
 export default globalThis.jotaiAtomCache.get("countAtom.ts/countAtom", atom(0));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(
             None,
@@ -567,7 +570,7 @@ import { atom } from "jotai";
 export default globalThis.jotaiAtomCache.get("src/atoms/countAtom.ts/countAtom", atom(0));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         jotai_utils_import,
@@ -593,7 +596,7 @@ const immerAtom = globalThis.jotaiAtomCache.get("atoms.ts/immerAtom", atomWithIm
 const toggleMachineAtom = globalThis.jotaiAtomCache.get("atoms.ts/toggleMachineAtom", atomWithMachine(()=>toggleMachine));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         test_default_export,
@@ -607,7 +610,7 @@ function fn() { return true; }
 export default fn;"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(
             Some(Config {
@@ -632,7 +635,7 @@ globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
 const myCustomAtom = globalThis.jotaiAtomCache.get("atoms.ts/myCustomAtom", customAtom(0));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         exported_atom,
@@ -654,7 +657,7 @@ import { atom } from "jotai";
 export const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         multiple_exported_atoms,
@@ -678,7 +681,7 @@ export const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", ato
 export const doubleAtom = globalThis.jotaiAtomCache.get("atoms.ts/doubleAtom", atom((get)=>get(countAtom) * 2));"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         ignore_non_top_level_atoms,

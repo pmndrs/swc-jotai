@@ -26,7 +26,7 @@ struct DebugLabelTransformVisitor {
 fn create_debug_label_assign_expr(atom_name_id: Id) -> Expr {
     let atom_name = atom_name_id.0.clone();
     Expr::Assign(AssignExpr {
-        left: PatOrExpr::Expr(Box::new(Expr::Member(MemberExpr {
+        left: AssignTarget::Simple(SimpleAssignTarget::Member(MemberExpr {
             obj: Box::new(Expr::Ident(Ident {
                 sym: atom_name_id.0,
                 span: DUMMY_SP.with_ctxt(atom_name_id.1),
@@ -38,7 +38,7 @@ fn create_debug_label_assign_expr(atom_name_id: Id) -> Expr {
                 optional: false,
             }),
             span: DUMMY_SP,
-        }))),
+        })),
         right: Box::new(Expr::Lit(Lit::Str(Str {
             value: atom_name,
             span: DUMMY_SP,
@@ -256,7 +256,10 @@ mod tests {
         common::{chain, Mark},
         ecma::{
             parser::Syntax,
-            transforms::{base::resolver, testing::test},
+            transforms::{
+                base::resolver,
+                testing::{test, test_inline},
+            },
             visit::{as_folder, Fold},
         },
     };
@@ -271,7 +274,7 @@ mod tests {
         )
     }
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         basic,
@@ -284,7 +287,7 @@ const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         exported_atom,
@@ -297,7 +300,7 @@ export const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         multiple_atoms,
@@ -313,7 +316,7 @@ const doubleAtom = atom((get) => get(countAtom) * 2);
 doubleAtom.debugLabel = "doubleAtom";"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         multiple_atoms_between_code,
@@ -333,7 +336,7 @@ const doubleAtom = atom((get) => get(countAtom) * 2);
 doubleAtom.debugLabel = "doubleAtom";"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         import_alias,
@@ -346,7 +349,7 @@ const countAtom = blah(0);
 countAtom.debugLabel = "countAtom";"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         ignore_non_jotai_imports,
@@ -363,7 +366,7 @@ const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         namespace_import,
@@ -376,7 +379,7 @@ const countAtom = jotai.atom(0);
 countAtom.debugLabel = "countAtom";"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         atom_from_another_package,
@@ -388,7 +391,7 @@ import { atom } from "some-library";
 const countAtom = atom(0);"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         no_jotai_import,
@@ -396,7 +399,7 @@ const countAtom = atom(0);"#
         "const countAtom = atom(0);"
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         handle_default_export,
@@ -410,7 +413,7 @@ atoms.debugLabel = "atoms";
 export default atoms;"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, Some(FileName::Real("countAtom.ts".parse().unwrap()))),
         handle_file_naming_default_export,
@@ -424,7 +427,7 @@ countAtom.debugLabel = "countAtom";
 export default countAtom;"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(
             None,
@@ -441,7 +444,7 @@ countAtom.debugLabel = "countAtom";
 export default countAtom;"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         jotai_utils_import,
@@ -459,7 +462,7 @@ const toggleMachineAtom = atomWithMachine(() => toggleMachine);
 toggleMachineAtom.debugLabel = "toggleMachineAtom";"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         test_default_export,
@@ -473,7 +476,7 @@ function fn() { return true; }
 export default fn;"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, None),
         basic_with_existing_debug_label,
@@ -488,7 +491,7 @@ countAtom.debugLabel = "countAtom";
 countAtom.debugLabel = "fancyAtomName";"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(
             Some(Config {
@@ -504,7 +507,7 @@ const myCustomAtom = customAtom(0);
 myCustomAtom.debugLabel = "myCustomAtom";"#
     );
 
-    test!(
+    test_inline!(
         Syntax::default(),
         |_| transform(None, Some(FileName::Anon)),
         filename_anon,
