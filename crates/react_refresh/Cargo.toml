@@ -8,7 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 common = { path = "../common" }
-swc_core = { version = "0.79.56", features = [
+swc_core = { version = "0.90.37", features = [
   "ecma_ast",
   "ecma_quote",
   "ecma_parser",
@@ -18,7 +18,7 @@ swc_core = { version = "0.79.56", features = [
 ] }
 
 [dev-dependencies]
-swc_core = { version = "0.79.56", features = [
+swc_core = { version = "0.90.37", features = [
   "ecma_plugin_transform",
   "ecma_transforms_react",
   "testing_transform",
