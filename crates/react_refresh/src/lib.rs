@@ -2,12 +2,10 @@
 
 use common::{parse_plugin_config, AtomImportMap, Config};
 use swc_core::{
+    common::FileName,
     common::DUMMY_SP,
-    common::{util::take::Take, FileName},
     ecma::{
         ast::*,
-        atoms::JsWord,
-        utils::{ModuleItemLike, StmtLike},
         visit::{as_folder, noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
     },
     plugin::{
@@ -19,16 +17,17 @@ use swc_core::{
 
 pub struct ReactRefreshTransformVisitor {
     atom_import_map: AtomImportMap,
-    current_var_declarator: Option<Id>,
-    refresh_atom_var_decl: Option<VarDeclarator>,
     #[allow(dead_code)]
     file_name: FileName,
-    exporting: bool,
     top_level: bool,
+
+    object_path: Vec<String>,
+    /// [true] if any atom was replaced.
+    used_atom: bool,
 }
 
-fn create_react_refresh_call_expr(key: String, atom_expr: &CallExpr) -> Box<Expr> {
-    Box::new(Expr::Call(CallExpr {
+fn create_react_refresh_call_expr_(key: String, atom_expr: &CallExpr) -> CallExpr {
+    CallExpr {
         span: DUMMY_SP,
         callee: Callee::Expr(Box::new(Expr::Member(MemberExpr {
             span: DUMMY_SP,
@@ -54,27 +53,25 @@ fn create_react_refresh_call_expr(key: String, atom_expr: &CallExpr) -> Box<Expr
             },
         ],
         type_args: None,
-    }))
-}
-
-fn create_react_refresh_var_decl(
-    atom_name_id: Id,
-    key: String,
-    atom_expr: &CallExpr,
-) -> VarDeclarator {
-    let atom_name = atom_name_id.0.clone();
-    VarDeclarator {
-        name: Pat::Ident(Ident::new(atom_name, DUMMY_SP.with_ctxt(atom_name_id.1)).into()),
-        span: DUMMY_SP.with_ctxt(atom_name_id.1),
-        init: Some(create_react_refresh_call_expr(key, atom_expr)),
-        definite: false,
     }
 }
 
-fn create_cache_key(atom_name: &JsWord, file_name: &FileName) -> String {
-    match file_name {
-        FileName::Real(real_file_name) => format!("{}/{}", real_file_name.display(), atom_name),
-        _ => atom_name.to_string(),
+fn show_prop_name(pn: &PropName) -> String {
+    use PropName::*;
+    match pn {
+        Ident(ref i) => i.sym.to_string(),
+        Str(ref s) => s.value.to_string(),
+        Num(ref n) => n
+            .raw
+            .as_ref()
+            .expect("Num(c).raw should be Some")
+            .to_string(),
+        Computed(ref c) => format!("computed:{:?}", c.span),
+        BigInt(ref b) => b
+            .raw
+            .as_ref()
+            .expect("BigInt(b).raw should be Some")
+            .to_string(),
     }
 }
 
@@ -82,149 +79,22 @@ impl ReactRefreshTransformVisitor {
     pub fn new(config: Config, file_name: FileName) -> Self {
         Self {
             atom_import_map: AtomImportMap::new(config.atom_names),
-            current_var_declarator: None,
-            refresh_atom_var_decl: None,
             file_name,
-            exporting: false,
             top_level: false,
+            used_atom: false,
+            object_path: Vec::new(),
         }
     }
 
-    fn visit_mut_stmt_like<T>(&mut self, stmts: &mut Vec<T>)
-    where
-        Vec<T>: VisitMutWith<Self>,
-        T: VisitMutWith<Self> + StmtLike + ModuleItemLike,
-    {
-        let mut stmts_updated: Vec<T> = Vec::with_capacity(stmts.len());
-        let mut is_atom_present: bool = false;
-
-        for stmt in stmts.take() {
-            let exporting_old = self.exporting;
-            let stmt = match stmt.try_into_stmt() {
-                Ok(mut stmt) => {
-                    stmt.visit_mut_with(self);
-                    <T as StmtLike>::from_stmt(stmt)
-                }
-                Err(node) => match node.try_into_module_decl() {
-                    Ok(mut module_decl) => {
-                        match module_decl {
-                            ModuleDecl::ExportDefaultExpr(mut default_export) => {
-                                if !self.atom_import_map.is_atom_import(&default_export.expr) {
-                                    default_export.visit_mut_with(self);
-                                    stmts_updated.push(
-                                        <T as ModuleItemLike>::try_from_module_decl(
-                                            default_export.into(),
-                                        )
-                                        .unwrap(),
-                                    );
-                                    continue;
-                                }
-                                is_atom_present = true;
-
-                                let atom_name: JsWord = match &self.file_name {
-                                    FileName::Real(real_file_name) => {
-                                        real_file_name.file_stem().map_or_else(
-                                            || "default_atom".into(),
-                                            |real_file_name| {
-                                                real_file_name.to_string_lossy().into()
-                                            },
-                                        )
-                                    }
-                                    _ => "default_atom".into(),
-                                };
-
-                                // export default expression
-                                stmts_updated.push(
-                                    <T as ModuleItemLike>::try_from_module_decl(
-                                        ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
-                                            expr: create_react_refresh_call_expr(
-                                                create_cache_key(&atom_name, &self.file_name),
-                                                default_export.expr.as_call().unwrap(),
-                                            ),
-                                            span: DUMMY_SP,
-                                        }),
-                                    )
-                                    .unwrap(),
-                                );
-                                continue;
-                            }
-                            ModuleDecl::ExportDecl(mut export_decl) => {
-                                if let Decl::Var(mut var_decl) = export_decl.decl.clone() {
-                                    if let [VarDeclarator {
-                                        init: Some(init_expr),
-                                        // TODO: handle remaining expressions too. See #35.
-                                        ..
-                                    }] = var_decl.decls.as_mut_slice()
-                                    {
-                                        if self.atom_import_map.is_atom_import(&*init_expr) {
-                                            self.exporting = true;
-                                        }
-                                    }
-                                }
-                                export_decl.visit_mut_with(self);
-                                <T as ModuleItemLike>::try_from_module_decl(export_decl.into())
-                                    .unwrap()
-                            }
-                            _ => {
-                                module_decl.visit_mut_with(self);
-                                <T as ModuleItemLike>::try_from_module_decl(module_decl).unwrap()
-                            }
-                        }
-                    }
-                    Err(..) => unreachable!(),
-                },
-            };
-
-            if self.refresh_atom_var_decl.is_none() {
-                stmts_updated.push(stmt);
-                continue;
-            }
-
-            is_atom_present = true;
-
-            let updated_decl = Decl::Var(Box::new(VarDecl {
-                span: DUMMY_SP,
-                kind: VarDeclKind::Const,
-                declare: false,
-                decls: vec![self.refresh_atom_var_decl.take().unwrap()],
-            }));
-
-            if self.exporting {
-                stmts_updated.push(
-                    <T as ModuleItemLike>::try_from_module_decl(ModuleDecl::ExportDecl(
-                        ExportDecl {
-                            span: DUMMY_SP,
-                            decl: updated_decl,
-                        },
-                    ))
-                    .unwrap(),
-                )
-            } else {
-                stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Decl(updated_decl)))
-            }
-            self.exporting = exporting_old;
+    fn create_cache_key(&self) -> String {
+        match self.file_name {
+            FileName::Real(ref real_file_name) => format!(
+                "{}/{}",
+                real_file_name.display(),
+                self.object_path.join(".")
+            ),
+            _ => self.object_path.join("."),
         }
-
-        if is_atom_present {
-            let jotai_cache_stmt = quote!(
-                "globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
-                cache: new Map(),
-                get(name, inst) { 
-                  if (this.cache.has(name)) {
-                    return this.cache.get(name)
-                  }
-                  this.cache.set(name, inst)
-                  return inst
-                },
-              }" as Stmt
-            );
-            let mut stmts_with_cache: Vec<T> = Vec::with_capacity(stmts_updated.len() + 1);
-            stmts_with_cache.push(<T as StmtLike>::from_stmt(jotai_cache_stmt));
-            stmts_with_cache.append(&mut stmts_updated);
-            stmts_updated = stmts_with_cache
-        }
-
-        *stmts = stmts_updated;
     }
 }
 
@@ -240,55 +110,107 @@ impl VisitMut for ReactRefreshTransformVisitor {
             return;
         }
 
-        let old_var_declarator = self.current_var_declarator.take();
+        // dbg!(&var_declarator);
 
-        self.current_var_declarator = if let Pat::Ident(BindingIdent {
-            id: Ident { span, sym, .. },
+        let key = if let Pat::Ident(BindingIdent {
+            id: Ident { sym, .. },
             ..
         }) = &var_declarator.name
         {
-            Some((sym.clone(), span.ctxt))
+            sym.to_string()
         } else {
-            None
+            "wat".to_string()
         };
 
+        self.object_path.push(key);
         var_declarator.visit_mut_children_with(self);
-
-        self.current_var_declarator = old_var_declarator;
+        self.object_path.pop();
     }
 
     fn visit_mut_arrow_expr(&mut self, _: &mut ArrowExpr) {
         // Don't touch this sub-tree
     }
 
-    fn visit_mut_call_expr(&mut self, call_expr: &mut CallExpr) {
-        if self.current_var_declarator.is_none() {
+    fn visit_mut_array_lit(&mut self, array: &mut ArrayLit) {
+        if !self.top_level {
             return;
         }
+        for (i, child) in array.elems.iter_mut().enumerate() {
+            self.object_path.push(i.to_string());
+            child.visit_mut_with(self);
+            self.object_path.pop();
+        }
+    }
 
-        call_expr.visit_mut_children_with(self);
-
-        let atom_name = self.current_var_declarator.as_ref().unwrap();
-        if let Callee::Expr(expr) = &call_expr.callee {
-            if self.atom_import_map.is_atom_import(expr) {
-                self.refresh_atom_var_decl = Some(create_react_refresh_var_decl(
-                    atom_name.clone(),
-                    create_cache_key(&atom_name.0, &self.file_name),
-                    call_expr,
-                ))
+    fn visit_mut_object_lit(&mut self, object: &mut ObjectLit) {
+        if !self.top_level {
+            return;
+        }
+        // For each prop in the object we need to record the path down to build up the ind-path
+        // down to any atoms in the literal.
+        for prop in object.props.iter_mut() {
+            match prop {
+                PropOrSpread::Prop(ref mut prop) => match prop.as_mut() {
+                    Prop::Shorthand(ref mut s) => {
+                        self.object_path.push(s.sym.to_string());
+                        prop.visit_mut_with(self);
+                        self.object_path.pop();
+                    }
+                    Prop::KeyValue(ref mut kv) => {
+                        // dbg!(&kv);
+                        self.object_path.push(show_prop_name(&kv.key));
+                        prop.visit_mut_with(self);
+                        self.object_path.pop();
+                    }
+                    // TODO: need to add in something here to avoid collisions
+                    _ => prop.visit_mut_with(self),
+                },
+                // TODO: need to add in something here to avoid collisions
+                _ => prop.visit_mut_with(self),
             }
         }
     }
 
+    fn visit_mut_call_expr(&mut self, call_expr: &mut CallExpr) {
+        // If this is an atom usage, replace it with the cached version.
+        if self.top_level {
+            if let Callee::Expr(expr) = &call_expr.callee {
+                if self.atom_import_map.is_atom_import(expr) {
+                    *call_expr =
+                        create_react_refresh_call_expr_(self.create_cache_key(), call_expr);
+                    self.used_atom = true;
+                    return;
+                }
+            }
+        }
+        call_expr.visit_mut_children_with(self);
+    }
+
     fn visit_mut_module_items(&mut self, items: &mut Vec<ModuleItem>) {
         self.top_level = true;
-        self.visit_mut_stmt_like(items);
+        items.visit_mut_children_with(self);
+        if self.used_atom {
+            let jotai_cache_stmt = quote!(
+                "globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+                cache: new Map(),
+                get(name, inst) { 
+                  if (this.cache.has(name)) {
+                    return this.cache.get(name)
+                  }
+                  this.cache.set(name, inst)
+                  return inst
+                },
+              }" as Stmt
+            );
+            let mi: ModuleItem = jotai_cache_stmt.into();
+            items.insert(0, mi);
+        }
     }
 
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
         let top_level = self.top_level;
         self.top_level = false;
-        self.visit_mut_stmt_like(stmts);
+        stmts.visit_mut_children_with(self);
         self.top_level = top_level;
     }
 }
@@ -526,7 +448,7 @@ globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   },
 }
 import { atom } from "jotai";
-export default globalThis.jotaiAtomCache.get("atoms.ts/atoms", atom(0));"#
+export default globalThis.jotaiAtomCache.get("atoms.ts/", atom(0));"#
     );
 
     test_inline!(
@@ -548,7 +470,7 @@ globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   },
 }
 import { atom } from "jotai";
-export default globalThis.jotaiAtomCache.get("countAtom.ts/countAtom", atom(0));"#
+export default globalThis.jotaiAtomCache.get("countAtom.ts/", atom(0));"#
     );
 
     test_inline!(
@@ -573,7 +495,7 @@ globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   },
 }
 import { atom } from "jotai";
-export default globalThis.jotaiAtomCache.get("src/atoms/countAtom.ts/countAtom", atom(0));"#
+export default globalThis.jotaiAtomCache.get("src/atoms/countAtom.ts/", atom(0));"#
     );
 
     test_inline!(
@@ -781,6 +703,86 @@ function getAtom() {
 }
 const getAtom2 = () => atom(2);
 const getAtom3 = () => { return atom(3) };
+"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Anon)),
+        atom_in_atom_reader_stmt,
+        r#"
+import { atom } from "jotai";
+
+export const state = atom(() => {
+   return atom(0);
+});"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+
+export const state = globalThis.jotaiAtomCache.get("state", atom(() => {
+    return atom(0);
+}));"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Anon)),
+        array_and_object_top_level,
+        r#"
+import { atom } from "jotai";
+
+const arr = [
+    atom(3),
+    atom(4),
+];
+
+const obj = {
+    five: atom(5),
+    six: atom(6),
+};
+
+function keepThese() {
+    const a = [atom(7)];
+    const b = { eight: atom(8) };
+}
+"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+
+const arr = [
+    globalThis.jotaiAtomCache.get("arr.0", atom(3)),
+    globalThis.jotaiAtomCache.get("arr.1", atom(4)),
+];
+
+const obj = {
+    five: globalThis.jotaiAtomCache.get("obj.five", atom(5)),
+    six: globalThis.jotaiAtomCache.get("obj.six", atom(6)),
+};
+
+function keepThese() {
+    const a = [atom(7)];
+    const b = { eight: atom(8) };
+}
 "#
     );
 }
