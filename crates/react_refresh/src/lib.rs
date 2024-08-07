@@ -110,8 +110,6 @@ impl VisitMut for ReactRefreshTransformVisitor {
             return;
         }
 
-        // dbg!(&var_declarator);
-
         let key = if let Pat::Ident(BindingIdent {
             id: Ident { sym, .. },
             ..
@@ -157,7 +155,6 @@ impl VisitMut for ReactRefreshTransformVisitor {
                         self.object_path.pop();
                     }
                     Prop::KeyValue(ref mut kv) => {
-                        // dbg!(&kv);
                         self.object_path.push(show_prop_name(&kv.key));
                         prop.visit_mut_with(self);
                         self.object_path.pop();
@@ -783,6 +780,33 @@ function keepThese() {
     const a = [atom(7)];
     const b = { eight: atom(8) };
 }
+"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Anon)),
+        compound_export,
+        r#"
+import { atom } from "jotai";
+
+export const one = atom(1),
+             two = atom(2);
+"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+
+export const one = globalThis.jotaiAtomCache.get("one", atom(1)), two = globalThis.jotaiAtomCache.get("two", atom(2));
 "#
     );
 }
