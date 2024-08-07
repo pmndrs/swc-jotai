@@ -19,11 +19,17 @@ pub struct ReactRefreshTransformVisitor {
     atom_import_map: AtomImportMap,
     #[allow(dead_code)]
     file_name: FileName,
+    /// We're currently at the top level
     top_level: bool,
-
-    object_path: Vec<String>,
-    /// [true] if any atom was replaced.
+    /// Any atom was used.
     used_atom: bool,
+    /// Path to the current expression when walking object and array literals.
+    /// For instance, when walking this expression:
+    /// ```js
+    /// const foo = [{}, { bar: [ 123 ]}]
+    /// ```
+    /// the path will be `["foo", "1", "bar", "0"]` when visiting `123`.
+    access_path: Vec<String>,
 }
 
 fn create_react_refresh_call_expr_(key: String, atom_expr: &CallExpr) -> CallExpr {
@@ -82,7 +88,7 @@ impl ReactRefreshTransformVisitor {
             file_name,
             top_level: false,
             used_atom: false,
-            object_path: Vec::new(),
+            access_path: Vec::new(),
         }
     }
 
@@ -91,9 +97,9 @@ impl ReactRefreshTransformVisitor {
             FileName::Real(ref real_file_name) => format!(
                 "{}/{}",
                 real_file_name.display(),
-                self.object_path.join(".")
+                self.access_path.join(".")
             ),
-            _ => self.object_path.join("."),
+            _ => self.access_path.join("."),
         }
     }
 }
@@ -103,84 +109,6 @@ impl VisitMut for ReactRefreshTransformVisitor {
 
     fn visit_mut_import_decl(&mut self, import: &mut ImportDecl) {
         self.atom_import_map.visit_import_decl(import);
-    }
-
-    fn visit_mut_var_declarator(&mut self, var_declarator: &mut VarDeclarator) {
-        if !self.top_level {
-            return;
-        }
-
-        let key = if let Pat::Ident(BindingIdent {
-            id: Ident { sym, .. },
-            ..
-        }) = &var_declarator.name
-        {
-            sym.to_string()
-        } else {
-            "wat".to_string()
-        };
-
-        self.object_path.push(key);
-        var_declarator.visit_mut_children_with(self);
-        self.object_path.pop();
-    }
-
-    fn visit_mut_arrow_expr(&mut self, _: &mut ArrowExpr) {
-        // Don't touch this sub-tree
-    }
-
-    fn visit_mut_array_lit(&mut self, array: &mut ArrayLit) {
-        if !self.top_level {
-            return;
-        }
-        for (i, child) in array.elems.iter_mut().enumerate() {
-            self.object_path.push(i.to_string());
-            child.visit_mut_with(self);
-            self.object_path.pop();
-        }
-    }
-
-    fn visit_mut_object_lit(&mut self, object: &mut ObjectLit) {
-        if !self.top_level {
-            return;
-        }
-        // For each prop in the object we need to record the path down to build up the ind-path
-        // down to any atoms in the literal.
-        for prop in object.props.iter_mut() {
-            match prop {
-                PropOrSpread::Prop(ref mut prop) => match prop.as_mut() {
-                    Prop::Shorthand(ref mut s) => {
-                        self.object_path.push(s.sym.to_string());
-                        prop.visit_mut_with(self);
-                        self.object_path.pop();
-                    }
-                    Prop::KeyValue(ref mut kv) => {
-                        self.object_path.push(show_prop_name(&kv.key));
-                        prop.visit_mut_with(self);
-                        self.object_path.pop();
-                    }
-                    // TODO: need to add in something here to avoid collisions
-                    _ => prop.visit_mut_with(self),
-                },
-                // TODO: need to add in something here to avoid collisions
-                _ => prop.visit_mut_with(self),
-            }
-        }
-    }
-
-    fn visit_mut_call_expr(&mut self, call_expr: &mut CallExpr) {
-        // If this is an atom usage, replace it with the cached version.
-        if self.top_level {
-            if let Callee::Expr(expr) = &call_expr.callee {
-                if self.atom_import_map.is_atom_import(expr) {
-                    *call_expr =
-                        create_react_refresh_call_expr_(self.create_cache_key(), call_expr);
-                    self.used_atom = true;
-                    return;
-                }
-            }
-        }
-        call_expr.visit_mut_children_with(self);
     }
 
     fn visit_mut_module_items(&mut self, items: &mut Vec<ModuleItem>) {
@@ -209,6 +137,85 @@ impl VisitMut for ReactRefreshTransformVisitor {
         self.top_level = false;
         stmts.visit_mut_children_with(self);
         self.top_level = top_level;
+    }
+
+    fn visit_mut_var_declarator(&mut self, var_declarator: &mut VarDeclarator) {
+        if !self.top_level {
+            return;
+        }
+
+        let key = if let Pat::Ident(BindingIdent {
+            id: Ident { sym, .. },
+            ..
+        }) = &var_declarator.name
+        {
+            sym.to_string()
+        } else {
+            "wat".to_string()
+        };
+
+        self.access_path.push(key);
+        var_declarator.visit_mut_children_with(self);
+        self.access_path.pop();
+    }
+
+    fn visit_mut_arrow_expr(&mut self, _: &mut ArrowExpr) {
+        // Arrow expressions is (maybe) the only way for expressions to not be at the top level and
+        // not have us visit `stmts` before.  Since we record whether we're on the top level in
+        // `visit_mut_stmts`, we need to make sure we don't visit the body here, so that any atoms
+        // aren't erroneously cached.
+    }
+
+    fn visit_mut_array_lit(&mut self, array: &mut ArrayLit) {
+        if !self.top_level {
+            return;
+        }
+        for (i, child) in array.elems.iter_mut().enumerate() {
+            self.access_path.push(i.to_string());
+            child.visit_mut_with(self);
+            self.access_path.pop();
+        }
+    }
+
+    fn visit_mut_object_lit(&mut self, object: &mut ObjectLit) {
+        if !self.top_level {
+            return;
+        }
+        // For each prop in the object we need to record the path down to build up the ind-path
+        // down to any atoms in the literal.
+        for prop in object.props.iter_mut() {
+            match prop {
+                PropOrSpread::Prop(ref mut prop) => match prop.as_mut() {
+                    Prop::Shorthand(ref mut s) => {
+                        self.access_path.push(s.sym.to_string());
+                        prop.visit_mut_with(self);
+                        self.access_path.pop();
+                    }
+                    Prop::KeyValue(ref mut kv) => {
+                        self.access_path.push(show_prop_name(&kv.key));
+                        prop.visit_mut_with(self);
+                        self.access_path.pop();
+                    }
+                    _ => prop.visit_mut_with(self),
+                },
+                _ => prop.visit_mut_with(self),
+            }
+        }
+    }
+
+    fn visit_mut_call_expr(&mut self, call_expr: &mut CallExpr) {
+        // If this is an atom, replace it with the cached `get` expression.
+        if self.top_level {
+            if let Callee::Expr(expr) = &call_expr.callee {
+                if self.atom_import_map.is_atom_import(expr) {
+                    *call_expr =
+                        create_react_refresh_call_expr_(self.create_cache_key(), call_expr);
+                    self.used_atom = true;
+                    return;
+                }
+            }
+        }
+        call_expr.visit_mut_children_with(self);
     }
 }
 
@@ -780,6 +787,41 @@ function keepThese() {
     const a = [atom(7)];
     const b = { eight: atom(8) };
 }
+"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Anon)),
+        object_edge_cases,
+        r#"
+import { atom } from "jotai";
+
+const obj = {
+    five: atom(5),
+    six: atom(6),
+    ...({
+        six: atom(66),
+    })
+};
+"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+
+const obj = {
+    five: globalThis.jotaiAtomCache.get("obj.five", atom(5)),
+    six: globalThis.jotaiAtomCache.get("obj.six", atom(6)),
+};
 "#
     );
 
