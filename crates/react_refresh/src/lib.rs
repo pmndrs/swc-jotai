@@ -821,6 +821,9 @@ import { atom } from "jotai";
 const obj = {
     five: globalThis.jotaiAtomCache.get("obj.five", atom(5)),
     six: globalThis.jotaiAtomCache.get("obj.six", atom(6)),
+    ...{
+        six: globalThis.jotaiAtomCache.get("obj.six", atom(66)),
+    }
 };
 "#
     );
