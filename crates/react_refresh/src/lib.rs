@@ -151,7 +151,7 @@ impl VisitMut for ReactRefreshTransformVisitor {
         {
             sym.to_string()
         } else {
-            "wat".to_string()
+            "[missing-declarator]".to_string()
         };
 
         self.access_path.push(key);
