@@ -152,6 +152,7 @@ impl ReactRefreshTransformVisitor {
                                 if let Decl::Var(mut var_decl) = export_decl.decl.clone() {
                                     if let [VarDeclarator {
                                         init: Some(init_expr),
+                                        // TODO: handle remaining expressions too. See #35.
                                         ..
                                     }] = var_decl.decls.as_mut_slice()
                                     {
@@ -256,6 +257,10 @@ impl VisitMut for ReactRefreshTransformVisitor {
         self.current_var_declarator = old_var_declarator;
     }
 
+    fn visit_mut_arrow_expr(&mut self, _: &mut ArrowExpr) {
+        // Don't touch this sub-tree
+    }
+
     fn visit_mut_call_expr(&mut self, call_expr: &mut CallExpr) {
         if self.current_var_declarator.is_none() {
             return;
@@ -281,9 +286,10 @@ impl VisitMut for ReactRefreshTransformVisitor {
     }
 
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
+        let top_level = self.top_level;
         self.top_level = false;
         self.visit_mut_stmt_like(stmts);
-        self.top_level = true;
+        self.top_level = top_level;
     }
 }
 
@@ -727,5 +733,54 @@ function createAtom(ov) {
 
 const value1Atom = createAtom('Hello String!');
 const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Anon)),
+        nested_top_level_atoms,
+        r#"
+import { atom } from "jotai";
+
+const three = atom(atom(atom(0)));
+"#,
+        r#"
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+const three = globalThis.jotaiAtomCache.get("three", atom(atom(atom(0))));
+"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Anon)),
+        higher_order_fn_to_atom,
+        r#"
+import { atom } from "jotai";
+
+function getAtom() {
+    return atom(1);
+}
+const getAtom2 = () => atom(2);
+const getAtom3 = () => { return atom(3) };
+"#,
+        r#"
+import { atom } from "jotai";
+
+function getAtom() {
+    return atom(1);
+}
+const getAtom2 = () => atom(2);
+const getAtom3 = () => { return atom(3) };
+"#
     );
 }
