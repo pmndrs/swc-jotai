@@ -2,8 +2,7 @@
 
 use common::{parse_plugin_config, AtomImportMap, Config};
 use swc_core::{
-    common::FileName,
-    common::DUMMY_SP,
+    common::{FileName, SyntaxContext, DUMMY_SP},
     ecma::{
         ast::*,
         visit::{as_folder, noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
@@ -35,14 +34,15 @@ pub struct ReactRefreshTransformVisitor {
 fn create_react_refresh_call_expr_(key: String, atom_expr: &CallExpr) -> CallExpr {
     CallExpr {
         span: DUMMY_SP,
+        ctxt: SyntaxContext::empty(),
         callee: Callee::Expr(Box::new(Expr::Member(MemberExpr {
             span: DUMMY_SP,
             obj: Box::new(Expr::Member(MemberExpr {
                 span: DUMMY_SP,
-                obj: Box::new(Expr::Ident(Ident::new("globalThis".into(), DUMMY_SP))),
-                prop: MemberProp::Ident(Ident::new("jotaiAtomCache".into(), DUMMY_SP)),
+                obj: Box::new(Expr::Ident("globalThis".into())),
+                prop: MemberProp::Ident("jotaiAtomCache".into()),
             })),
-            prop: MemberProp::Ident(Ident::new("get".into(), DUMMY_SP)),
+            prop: MemberProp::Ident("get".into()),
         }))),
         args: vec![
             ExprOrSpread {
