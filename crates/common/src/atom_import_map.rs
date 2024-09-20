@@ -75,7 +75,7 @@ impl AtomImportMap {
                 ..
             }) => {
                 if let Expr::Ident(obj) = &**obj {
-                    if let Some(..) = self.namespace_imports.get(&obj.sym) {
+                    if self.namespace_imports.get(&obj.sym).is_some() {
                         return ATOM_IMPORTS.contains(&&*prop.sym);
                     }
                 }

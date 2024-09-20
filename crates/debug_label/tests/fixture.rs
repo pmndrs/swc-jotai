@@ -3,7 +3,7 @@ use std::{fs::read_to_string, path::PathBuf};
 use common::parse_plugin_config;
 use swc_core::{
     common::{chain, FileName, Mark},
-    ecma::parser::{EsConfig, Syntax},
+    ecma::parser::{EsSyntax, Syntax},
     ecma::transforms::{
         base::resolver,
         react::{react, Options, RefreshOptions},
@@ -21,7 +21,7 @@ fn test(input: PathBuf) {
     let output = input.with_file_name("output.js");
 
     test_fixture(
-        Syntax::Es(EsConfig {
+        Syntax::Es(EsSyntax {
             jsx: true,
             ..Default::default()
         }),

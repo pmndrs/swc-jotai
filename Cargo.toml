@@ -1,10 +1,9 @@
 [workspace]
+resolver = "2"
+members = ["crates/common", "crates/debug_label", "crates/react_refresh"]
 
-members = [
-  "crates/common",
-  "crates/debug_label",
-  "crates/react_refresh",
-]
+[workspace.dependencies]
+swc_core = "0.104.2"
 
 [profile.release]
 # This removes more dead code

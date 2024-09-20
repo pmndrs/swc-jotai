@@ -2,8 +2,7 @@
 
 use common::{parse_plugin_config, AtomImportMap, Config};
 use swc_core::{
-    common::DUMMY_SP,
-    common::{util::take::Take, FileName},
+    common::{util::take::Take, FileName, SyntaxContext, DUMMY_SP},
     ecma::{
         ast::*,
         atoms::JsWord,
@@ -27,16 +26,8 @@ fn create_debug_label_assign_expr(atom_name_id: Id) -> Expr {
     let atom_name = atom_name_id.0.clone();
     Expr::Assign(AssignExpr {
         left: AssignTarget::Simple(SimpleAssignTarget::Member(MemberExpr {
-            obj: Box::new(Expr::Ident(Ident {
-                sym: atom_name_id.0,
-                span: DUMMY_SP.with_ctxt(atom_name_id.1),
-                optional: false,
-            })),
-            prop: MemberProp::Ident(Ident {
-                sym: "debugLabel".into(),
-                span: DUMMY_SP,
-                optional: false,
-            }),
+            obj: Box::new(Expr::Ident(atom_name_id.into())),
+            prop: MemberProp::Ident("debugLabel".into()),
             span: DUMMY_SP,
         })),
         right: Box::new(Expr::Lit(Lit::Str(Str {
@@ -72,7 +63,7 @@ impl DebugLabelTransformVisitor {
             let stmt = match stmt.try_into_stmt() {
                 Ok(mut stmt) => {
                     stmt.visit_mut_with(self);
-                    <T as StmtLike>::from_stmt(stmt)
+                    T::from(stmt)
                 }
                 Err(node) => match node.try_into_module_decl() {
                     Ok(mut module_decl) => {
@@ -109,40 +100,33 @@ impl DebugLabelTransformVisitor {
                                 };
 
                                 // Variable declaration
-                                stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Decl(
-                                    Decl::Var(Box::new(VarDecl {
+                                stmts_updated.push(T::from(Stmt::Decl(Decl::Var(Box::new(
+                                    VarDecl {
                                         declare: Default::default(),
                                         decls: vec![VarDeclarator {
                                             definite: false,
                                             init: Some(default_export.expr),
-                                            name: Pat::Ident(
-                                                Ident::new(atom_name.clone(), DUMMY_SP).into(),
-                                            ),
+                                            name: Pat::Ident(atom_name.clone().into()),
                                             span: DUMMY_SP,
                                         }],
                                         kind: VarDeclKind::Const,
                                         span: DUMMY_SP,
-                                    })),
-                                )));
-                                // Assign debug label
-                                stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Expr(
-                                    ExprStmt {
-                                        span: DUMMY_SP,
-                                        expr: Box::new(create_debug_label_assign_expr((
-                                            atom_name.clone(),
-                                            Default::default(),
-                                        ))),
+                                        ctxt: SyntaxContext::empty(),
                                     },
-                                )));
+                                )))));
+                                // Assign debug label
+                                stmts_updated.push(T::from(Stmt::Expr(ExprStmt {
+                                    span: DUMMY_SP,
+                                    expr: Box::new(create_debug_label_assign_expr((
+                                        atom_name.clone(),
+                                        SyntaxContext::empty(),
+                                    ))),
+                                })));
                                 // export default expression
                                 stmts_updated.push(
                                     <T as ModuleItemLike>::try_from_module_decl(
                                         ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
-                                            expr: Box::new(Expr::Ident(Ident {
-                                                sym: atom_name.clone(),
-                                                span: DUMMY_SP,
-                                                optional: false,
-                                            })),
+                                            expr: Box::new(Expr::Ident(atom_name.into())),
                                             span: DUMMY_SP,
                                         }),
                                     )
@@ -165,7 +149,7 @@ impl DebugLabelTransformVisitor {
                 continue;
             }
 
-            stmts_updated.push(<T as StmtLike>::from_stmt(Stmt::Expr(ExprStmt {
+            stmts_updated.push(T::from(Stmt::Expr(ExprStmt {
                 span: DUMMY_SP,
                 expr: Box::new(self.debug_label_expr.take().unwrap()),
             })))
@@ -185,12 +169,8 @@ impl VisitMut for DebugLabelTransformVisitor {
     fn visit_mut_var_declarator(&mut self, var_declarator: &mut VarDeclarator) {
         let old_var_declarator = self.current_var_declarator.take();
 
-        self.current_var_declarator = if let Pat::Ident(BindingIdent {
-            id: Ident { span, sym, .. },
-            ..
-        }) = &var_declarator.name
-        {
-            Some((sym.clone(), span.ctxt))
+        self.current_var_declarator = if let Pat::Ident(id) = &var_declarator.name {
+            Some(id.to_id())
         } else {
             None
         };
