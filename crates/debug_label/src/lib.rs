@@ -5,9 +5,9 @@ use swc_core::{
     common::{util::take::Take, FileName, SyntaxContext, DUMMY_SP},
     ecma::{
         ast::*,
-        atoms::JsWord,
+        atoms::Atom,
         utils::{ModuleItemLike, StmtLike},
-        visit::{as_folder, noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
+        visit::{noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
     },
     plugin::{
         metadata::TransformPluginMetadataContextKind, plugin_transform,
@@ -80,7 +80,7 @@ impl DebugLabelTransformVisitor {
                                     continue;
                                 }
 
-                                let atom_name: JsWord = match &self.file_name {
+                                let atom_name: Atom = match &self.file_name {
                                     FileName::Real(real_file_name) => {
                                         if let Some(file_stem) =
                                             real_file_name.file_stem().map(|s| s.to_string_lossy())
@@ -204,8 +204,22 @@ impl VisitMut for DebugLabelTransformVisitor {
     }
 }
 
+impl Fold for DebugLabelTransformVisitor {
+    fn fold_module(&mut self, mut module: Module) -> Module {
+        module.visit_mut_with(self);
+        module
+    }
+
+    fn fold_script(&mut self, mut script: Script) -> Script {
+        script.visit_mut_with(self);
+        script
+    }
+}
+
+
+
 pub fn debug_label(config: Config, file_name: FileName) -> impl Fold {
-    as_folder(DebugLabelTransformVisitor::new(config, file_name))
+    DebugLabelTransformVisitor::new(config, file_name)
 }
 
 #[plugin_transform]
@@ -222,35 +236,25 @@ pub fn debug_label_transform(
         Some(file_name) => FileName::Real(file_name.into()),
         None => FileName::Anon,
     };
-    program.fold_with(&mut as_folder(DebugLabelTransformVisitor::new(
+    program.fold_with(&mut DebugLabelTransformVisitor::new(
         config, file_name,
-    )))
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
     use swc_core::{
-        common::{chain, Mark},
         ecma::{
             parser::Syntax,
-            transforms::{
-                base::resolver,
-                testing::{test, test_inline},
-            },
-            visit::{as_folder, Fold},
+            transforms::testing::test_inline,
         },
     };
 
-    fn transform(config: Option<Config>, file_name: Option<FileName>) -> impl Fold {
-        chain!(
-            resolver(Mark::new(), Mark::new(), false),
-            as_folder(DebugLabelTransformVisitor::new(
-                config.unwrap_or_default(),
-                file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts")))
-            ))
+    fn transform(config: Option<Config>, file_name: Option<FileName>) -> DebugLabelTransformVisitor {
+        DebugLabelTransformVisitor::new(
+            config.unwrap_or_default(),
+            file_name.unwrap_or(FileName::Real("atoms.ts".into()))
         )
     }
 
@@ -341,7 +345,7 @@ const countAtom = atom(0);"#,
         r#"
 import React from "react";
 import { atom } from "jotai";
-import { defaultCount } from "./utils";      
+import { defaultCount } from "./utils";
 const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";"#
     );
@@ -448,11 +452,11 @@ toggleMachineAtom.debugLabel = "toggleMachineAtom";"#
         test_default_export,
         r#"
 function fn() { return true; }
-        
+
 export default fn;"#,
         r#"
 function fn() { return true; }
-                
+
 export default fn;"#
     );
 

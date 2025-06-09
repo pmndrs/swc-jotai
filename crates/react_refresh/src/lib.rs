@@ -5,7 +5,7 @@ use swc_core::{
     common::{FileName, SyntaxContext, DUMMY_SP},
     ecma::{
         ast::*,
-        visit::{as_folder, noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
+        visit::{noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
     },
     plugin::{
         metadata::TransformPluginMetadataContextKind, plugin_transform,
@@ -118,7 +118,7 @@ impl VisitMut for ReactRefreshTransformVisitor {
             let jotai_cache_stmt = quote!(
                 "globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
                 cache: new Map(),
-                get(name, inst) { 
+                get(name, inst) {
                   if (this.cache.has(name)) {
                     return this.cache.get(name)
                   }
@@ -219,8 +219,20 @@ impl VisitMut for ReactRefreshTransformVisitor {
     }
 }
 
+impl Fold for ReactRefreshTransformVisitor {
+    fn fold_module(&mut self, mut module: Module) -> Module {
+        module.visit_mut_with(self);
+        module
+    }
+
+    fn fold_script(&mut self, mut script: Script) -> Script {
+        script.visit_mut_with(self);
+        script
+    }
+}
+
 pub fn react_refresh(config: Config, file_name: FileName) -> impl Fold {
-    as_folder(ReactRefreshTransformVisitor::new(config, file_name))
+    ReactRefreshTransformVisitor::new(config, file_name)
 }
 
 #[plugin_transform]
@@ -237,35 +249,25 @@ pub fn react_refresh_transform(
         Some(file_name) => FileName::Real(file_name.into()),
         None => FileName::Anon,
     };
-    program.fold_with(&mut as_folder(ReactRefreshTransformVisitor::new(
+    program.fold_with(&mut ReactRefreshTransformVisitor::new(
         config, file_name,
-    )))
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
     use swc_core::{
-        common::{chain, Mark},
         ecma::{
             parser::Syntax,
-            transforms::{
-                base::resolver,
-                testing::{test, test_inline},
-            },
-            visit::{as_folder, Fold},
+            transforms::testing::test_inline,
         },
     };
 
-    fn transform(config: Option<Config>, file_name: Option<FileName>) -> impl Fold {
-        chain!(
-            resolver(Mark::new(), Mark::new(), false),
-            as_folder(ReactRefreshTransformVisitor::new(
-                config.unwrap_or_default(),
-                file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts")))
-            ))
+    fn transform(config: Option<Config>, file_name: Option<FileName>) -> ReactRefreshTransformVisitor {
+        ReactRefreshTransformVisitor::new(
+            config.unwrap_or_default(),
+            file_name.unwrap_or(FileName::Real("atoms.ts".into()))
         )
     }
 
@@ -279,7 +281,7 @@ const countAtom = atom(0);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -302,7 +304,7 @@ const doubleAtom = atom((get) => get(countAtom) * 2);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -328,7 +330,7 @@ const doubleAtom = atom((get) => get(countAtom) * 2);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -353,7 +355,7 @@ const countAtom = blah(0);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -377,7 +379,7 @@ const countAtom = atom(0);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -387,7 +389,7 @@ globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
 }
 import React from "react";
 import { atom } from "jotai";
-import { defaultCount } from "./utils";      
+import { defaultCount } from "./utils";
 const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));"#
     );
 
@@ -401,7 +403,7 @@ const countAtom = jotai.atom(0);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -443,7 +445,7 @@ export default atom(0);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -465,7 +467,7 @@ export default atom(0);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -490,7 +492,7 @@ export default atom(0);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -514,7 +516,7 @@ const toggleMachineAtom = atomWithMachine(() => toggleMachine);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -534,11 +536,11 @@ const toggleMachineAtom = globalThis.jotaiAtomCache.get("atoms.ts/toggleMachineA
         test_default_export,
         r#"
 function fn() { return true; }
-        
+
 export default fn;"#,
         r#"
 function fn() { return true; }
-                
+
 export default fn;"#
     );
 
@@ -556,7 +558,7 @@ const myCustomAtom = customAtom(0);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -577,14 +579,14 @@ export const countAtom = atom(0);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
     cache: new Map(),
-    get(name, inst) { 
+    get(name, inst) {
       if (this.cache.has(name)) {
         return this.cache.get(name)
       }
       this.cache.set(name, inst)
       return inst
     },
-}        
+}
 import { atom } from "jotai";
 export const countAtom = globalThis.jotaiAtomCache.get("atoms.ts/countAtom", atom(0));"#
     );
@@ -600,7 +602,7 @@ export const doubleAtom = atom((get) => get(countAtom) * 2);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -636,14 +638,14 @@ const countAtom = atom(0);"#,
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
     this.cache.set(name, inst)
     return inst
   },
-}        
+}
 import { atom } from "jotai";
 function createAtom(ov) {
   const valueAtom = atom(ov);
@@ -673,7 +675,7 @@ const three = atom(atom(atom(0)));
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -723,7 +725,7 @@ export const state = atom(() => {
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -763,7 +765,7 @@ function keepThese() {
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -808,7 +810,7 @@ const obj = {
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
@@ -841,7 +843,7 @@ export const one = atom(1),
         r#"
 globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
   cache: new Map(),
-  get(name, inst) { 
+  get(name, inst) {
     if (this.cache.has(name)) {
       return this.cache.get(name)
     }
