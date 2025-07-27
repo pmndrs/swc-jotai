@@ -2,11 +2,9 @@ use std::{fs::read_to_string, path::PathBuf};
 
 use common::parse_plugin_config;
 use swc_core::{
-    common::{chain, FileName, Mark},
+    common::FileName,
     ecma::parser::{EsSyntax, Syntax},
     ecma::transforms::{
-        base::resolver,
-        react::{react, Options, RefreshOptions},
         testing::test_fixture,
     },
 };
@@ -25,29 +23,8 @@ fn test(input: PathBuf) {
             jsx: true,
             ..Default::default()
         }),
-        &|t| {
-            let unresolved_mark = Mark::new();
-            let top_level_mark = Mark::new();
-
-            chain!(
-                resolver(unresolved_mark, top_level_mark, false),
-                react_refresh(config.clone(), FileName::Real("atoms.ts".parse().unwrap())),
-                react(
-                    t.cm.clone(),
-                    Some(t.comments.clone(),),
-                    Options {
-                        development: Some(true),
-                        refresh: Some(RefreshOptions {
-                            refresh_reg: "$___refreshReg$".into(),
-                            refresh_sig: "$___refreshSig$".into(),
-                            emit_full_signatures: false
-                        }),
-                        ..Default::default()
-                    },
-                    top_level_mark,
-                    unresolved_mark
-                ),
-            )
+        &|_t| {
+            react_refresh(config.clone(), FileName::Real("atoms.ts".parse().unwrap()))
         },
         &input,
         &output,

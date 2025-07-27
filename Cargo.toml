@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/common", "crates/debug_label", "crates/react_refresh"]
 
 [workspace.dependencies]
-swc_core = "0.104.2"
+swc_core = "32.0.0"
 
 [profile.release]
 # This removes more dead code
