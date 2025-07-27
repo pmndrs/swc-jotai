@@ -234,7 +234,6 @@ mod tests {
     use super::*;
     use swc_core::{
         ecma::{
-            ast::Pass,
             parser::Syntax,
             transforms::{
                 testing::{test, test_inline},
