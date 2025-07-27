@@ -41,7 +41,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          target: wasm32-wasi
+          target: wasm32-wasip1
       - name: Run cargo check
         run: cargo check
   test:
@@ -52,6 +52,6 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          target: wasm32-wasi
+          target: wasm32-wasip1
       - name: Run cargo test
         run: cargo test

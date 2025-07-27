@@ -5,7 +5,7 @@ use swc_core::{
     common::{FileName, SyntaxContext, DUMMY_SP},
     ecma::{
         ast::*,
-        visit::{visit_mut_pass, noop_visit_mut_type, VisitMut, VisitMutWith},
+        visit::{noop_visit_mut_type, visit_mut_pass, VisitMut, VisitMutWith},
     },
     plugin::{
         metadata::TransformPluginMetadataContextKind, plugin_transform,
@@ -120,7 +120,7 @@ impl VisitMut for ReactRefreshTransformVisitor {
                 self.top_level = true;
                 self.module_level = true;
                 script.visit_mut_children_with(self);
-                
+
                 if self.used_atom {
                     let jotai_cache_stmt = quote!(
                         "globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
@@ -134,7 +134,7 @@ impl VisitMut for ReactRefreshTransformVisitor {
                         },
                       }" as Stmt
                     );
-                    
+
                     // Find the position to insert the cache statement
                     // Insert after directives but before other statements
                     let mut insert_pos = 0;
@@ -142,7 +142,9 @@ impl VisitMut for ReactRefreshTransformVisitor {
                         match stmt {
                             Stmt::Expr(ExprStmt { expr, .. }) => {
                                 if let Expr::Lit(Lit::Str(str_lit)) = &**expr {
-                                    if str_lit.value.as_str() == "use client" || str_lit.value.as_str() == "use strict" {
+                                    if str_lit.value.as_str() == "use client"
+                                        || str_lit.value.as_str() == "use strict"
+                                    {
                                         insert_pos = i + 1;
                                         continue;
                                     }
@@ -156,7 +158,7 @@ impl VisitMut for ReactRefreshTransformVisitor {
                             }
                         }
                     }
-                    
+
                     script.body.insert(insert_pos, jotai_cache_stmt);
                 }
             }
@@ -189,7 +191,7 @@ impl VisitMut for ReactRefreshTransformVisitor {
               }" as Stmt
             );
             let mi: ModuleItem = jotai_cache_stmt.into();
-            
+
             // Find the position to insert the cache statement
             // Insert at the very beginning, before imports and directives
             let mut insert_pos = 0;
@@ -198,7 +200,9 @@ impl VisitMut for ReactRefreshTransformVisitor {
                     ModuleItem::Stmt(Stmt::Expr(ExprStmt { expr, .. })) => {
                         // Check if this is a directive like 'use client' or 'use strict'
                         if let Expr::Lit(Lit::Str(str_lit)) = &**expr {
-                            if str_lit.value.as_str() == "use client" || str_lit.value.as_str() == "use strict" {
+                            if str_lit.value.as_str() == "use client"
+                                || str_lit.value.as_str() == "use strict"
+                            {
                                 insert_pos = i + 1;
                                 continue;
                             }
@@ -212,7 +216,7 @@ impl VisitMut for ReactRefreshTransformVisitor {
                     }
                 }
             }
-            
+
             items.insert(insert_pos, mi);
         }
     }
@@ -346,20 +350,16 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use swc_core::{
-        ecma::{
-            parser::Syntax,
-            transforms::{
-                testing::{test, test_inline},
-            },
-            visit::visit_mut_pass,
-        },
+    use swc_core::ecma::{
+        parser::Syntax,
+        transforms::testing::{test, test_inline},
+        visit::visit_mut_pass,
     };
 
     fn transform(config: Option<Config>, file_name: Option<FileName>) -> impl Pass {
         visit_mut_pass(ReactRefreshTransformVisitor::new(
             config.unwrap_or_default(),
-            file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts")))
+            file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts"))),
         ))
     }
 

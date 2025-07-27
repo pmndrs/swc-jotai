@@ -4,9 +4,7 @@ use common::parse_plugin_config;
 use swc_core::{
     common::FileName,
     ecma::parser::{EsSyntax, Syntax},
-    ecma::transforms::{
-        testing::test_fixture,
-    },
+    ecma::transforms::testing::test_fixture,
 };
 use swc_jotai_debug_label::debug_label;
 use testing::fixture;
@@ -23,9 +21,7 @@ fn test(input: PathBuf) {
             jsx: true,
             ..Default::default()
         }),
-        &|_t| {
-            debug_label(config.clone(), FileName::Real("atoms.ts".parse().unwrap()))
-        },
+        &|_t| debug_label(config.clone(), FileName::Real("atoms.ts".parse().unwrap())),
         &input,
         &output,
         Default::default(),

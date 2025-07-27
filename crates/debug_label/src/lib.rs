@@ -7,7 +7,7 @@ use swc_core::{
         ast::*,
         atoms::Atom,
         utils::{ModuleItemLike, StmtLike},
-        visit::{noop_visit_mut_type, VisitMut, VisitMutWith, visit_mut_pass},
+        visit::{noop_visit_mut_type, visit_mut_pass, VisitMut, VisitMutWith},
     },
     plugin::{
         metadata::TransformPluginMetadataContextKind, plugin_transform,
@@ -232,20 +232,16 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use swc_core::{
-        ecma::{
-            parser::Syntax,
-            transforms::{
-                testing::{test, test_inline},
-            },
-            visit::visit_mut_pass,
-        },
+    use swc_core::ecma::{
+        parser::Syntax,
+        transforms::testing::{test, test_inline},
+        visit::visit_mut_pass,
     };
 
     fn transform(config: Option<Config>, file_name: Option<FileName>) -> impl Pass {
         visit_mut_pass(DebugLabelTransformVisitor::new(
             config.unwrap_or_default(),
-            file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts")))
+            file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts"))),
         ))
     }
 
