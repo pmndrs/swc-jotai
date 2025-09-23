@@ -5,7 +5,7 @@ use swc_core::{
     common::{FileName, SyntaxContext, DUMMY_SP},
     ecma::{
         ast::*,
-        visit::{as_folder, noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
+        visit::{noop_visit_mut_type, visit_mut_pass, VisitMut, VisitMutWith},
     },
     plugin::{
         metadata::TransformPluginMetadataContextKind, plugin_transform,
@@ -20,6 +20,8 @@ pub struct ReactRefreshTransformVisitor {
     file_name: FileName,
     /// We're currently at the top level
     top_level: bool,
+    /// We're currently at the module level (not inside functions/blocks)
+    module_level: bool,
     /// Any atom was used.
     used_atom: bool,
     /// Path to the current expression when walking object and array literals.
@@ -87,6 +89,7 @@ impl ReactRefreshTransformVisitor {
             atom_import_map: AtomImportMap::new(config.atom_names),
             file_name,
             top_level: false,
+            module_level: true,
             used_atom: false,
             access_path: Vec::new(),
         }
@@ -107,12 +110,72 @@ impl ReactRefreshTransformVisitor {
 impl VisitMut for ReactRefreshTransformVisitor {
     noop_visit_mut_type!();
 
+    fn visit_mut_program(&mut self, program: &mut Program) {
+        match program {
+            Program::Module(module) => {
+                self.visit_mut_module(module);
+            }
+            Program::Script(script) => {
+                // For scripts, we need to handle cache insertion manually
+                self.top_level = true;
+                self.module_level = true;
+                script.visit_mut_children_with(self);
+
+                if self.used_atom {
+                    let jotai_cache_stmt = quote!(
+                        "globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+                        cache: new Map(),
+                        get(name, inst) { 
+                          if (this.cache.has(name)) {
+                            return this.cache.get(name)
+                          }
+                          this.cache.set(name, inst)
+                          return inst
+                        },
+                      }" as Stmt
+                    );
+
+                    // Find the position to insert the cache statement
+                    // Insert after directives but before other statements
+                    let mut insert_pos = 0;
+                    for (i, stmt) in script.body.iter().enumerate() {
+                        match stmt {
+                            Stmt::Expr(ExprStmt { expr, .. }) => {
+                                if let Expr::Lit(Lit::Str(str_lit)) = &**expr {
+                                    if str_lit.value.as_str() == "use client"
+                                        || str_lit.value.as_str() == "use strict"
+                                    {
+                                        insert_pos = i + 1;
+                                        continue;
+                                    }
+                                }
+                                // Not a directive, so this is where we should insert before regular statements
+                                break;
+                            }
+                            _ => {
+                                // For any other statement, this is where we should stop looking
+                                break;
+                            }
+                        }
+                    }
+
+                    script.body.insert(insert_pos, jotai_cache_stmt);
+                }
+            }
+        }
+    }
+
+    fn visit_mut_module(&mut self, module: &mut Module) {
+        self.visit_mut_module_items(&mut module.body);
+    }
+
     fn visit_mut_import_decl(&mut self, import: &mut ImportDecl) {
         self.atom_import_map.visit_import_decl(import);
     }
 
     fn visit_mut_module_items(&mut self, items: &mut Vec<ModuleItem>) {
         self.top_level = true;
+        self.module_level = true;
         items.visit_mut_children_with(self);
         if self.used_atom {
             let jotai_cache_stmt = quote!(
@@ -128,19 +191,50 @@ impl VisitMut for ReactRefreshTransformVisitor {
               }" as Stmt
             );
             let mi: ModuleItem = jotai_cache_stmt.into();
-            items.insert(0, mi);
+
+            // Find the position to insert the cache statement
+            // Insert at the very beginning, before imports and directives
+            let mut insert_pos = 0;
+            for (i, item) in items.iter().enumerate() {
+                match item {
+                    ModuleItem::Stmt(Stmt::Expr(ExprStmt { expr, .. })) => {
+                        // Check if this is a directive like 'use client' or 'use strict'
+                        if let Expr::Lit(Lit::Str(str_lit)) = &**expr {
+                            if str_lit.value.as_str() == "use client"
+                                || str_lit.value.as_str() == "use strict"
+                            {
+                                insert_pos = i + 1;
+                                continue;
+                            }
+                        }
+                        // Not a directive, so insert before this
+                        break;
+                    }
+                    _ => {
+                        // For any other item (including imports), insert before it
+                        break;
+                    }
+                }
+            }
+
+            items.insert(insert_pos, mi);
         }
     }
 
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
         let top_level = self.top_level;
+        // Only set top_level to false, but keep module_level as is
+        // This is important: statements at module level should still be considered module_level
         self.top_level = false;
         stmts.visit_mut_children_with(self);
         self.top_level = top_level;
     }
 
     fn visit_mut_var_declarator(&mut self, var_declarator: &mut VarDeclarator) {
-        if !self.top_level {
+        // Module-level variable declarations should be processed even when not at top_level
+        // This is necessary for custom atom names to work properly
+        // But only process if we're at module level to avoid function-scoped variables
+        if !self.module_level {
             return;
         }
 
@@ -159,15 +253,22 @@ impl VisitMut for ReactRefreshTransformVisitor {
         self.access_path.pop();
     }
 
-    fn visit_mut_arrow_expr(&mut self, _: &mut ArrowExpr) {
-        // Arrow expressions is (maybe) the only way for expressions to not be at the top level and
-        // not have us visit `stmts` before.  Since we record whether we're on the top level in
-        // `visit_mut_stmts`, we need to make sure we don't visit the body here, so that any atoms
-        // aren't erroneously cached.
+    fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
+        let module_level = self.module_level;
+        self.module_level = false;
+        arrow.visit_mut_children_with(self);
+        self.module_level = module_level;
+    }
+
+    fn visit_mut_function(&mut self, func: &mut Function) {
+        let module_level = self.module_level;
+        self.module_level = false;
+        func.visit_mut_children_with(self);
+        self.module_level = module_level;
     }
 
     fn visit_mut_array_lit(&mut self, array: &mut ArrayLit) {
-        if !self.top_level {
+        if !self.module_level {
             return;
         }
         for (i, child) in array.elems.iter_mut().enumerate() {
@@ -178,7 +279,7 @@ impl VisitMut for ReactRefreshTransformVisitor {
     }
 
     fn visit_mut_object_lit(&mut self, object: &mut ObjectLit) {
-        if !self.top_level {
+        if !self.module_level {
             return;
         }
         // For each prop in the object we need to record the path down to build up the ind-path
@@ -205,7 +306,9 @@ impl VisitMut for ReactRefreshTransformVisitor {
 
     fn visit_mut_call_expr(&mut self, call_expr: &mut CallExpr) {
         // If this is an atom, replace it with the cached `get` expression.
-        if self.top_level {
+        // Check for atoms regardless of top_level status to support custom atom names
+        // But only at module level to avoid function-scoped atoms
+        if self.module_level {
             if let Callee::Expr(expr) = &call_expr.callee {
                 if self.atom_import_map.is_atom_import(expr) {
                     *call_expr =
@@ -219,8 +322,8 @@ impl VisitMut for ReactRefreshTransformVisitor {
     }
 }
 
-pub fn react_refresh(config: Config, file_name: FileName) -> impl Fold {
-    as_folder(ReactRefreshTransformVisitor::new(config, file_name))
+pub fn react_refresh(config: Config, file_name: FileName) -> impl Pass {
+    visit_mut_pass(ReactRefreshTransformVisitor::new(config, file_name))
 }
 
 #[plugin_transform]
@@ -237,7 +340,7 @@ pub fn react_refresh_transform(
         Some(file_name) => FileName::Real(file_name.into()),
         None => FileName::Anon,
     };
-    program.fold_with(&mut as_folder(ReactRefreshTransformVisitor::new(
+    program.apply(&mut visit_mut_pass(ReactRefreshTransformVisitor::new(
         config, file_name,
     )))
 }
@@ -247,26 +350,17 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use swc_core::{
-        common::{chain, Mark},
-        ecma::{
-            parser::Syntax,
-            transforms::{
-                base::resolver,
-                testing::{test, test_inline},
-            },
-            visit::{as_folder, Fold},
-        },
+    use swc_core::ecma::{
+        parser::Syntax,
+        transforms::testing::{test, test_inline},
+        visit::visit_mut_pass,
     };
 
-    fn transform(config: Option<Config>, file_name: Option<FileName>) -> impl Fold {
-        chain!(
-            resolver(Mark::new(), Mark::new(), false),
-            as_folder(ReactRefreshTransformVisitor::new(
-                config.unwrap_or_default(),
-                file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts")))
-            ))
-        )
+    fn transform(config: Option<Config>, file_name: Option<FileName>) -> impl Pass {
+        visit_mut_pass(ReactRefreshTransformVisitor::new(
+            config.unwrap_or_default(),
+            file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts"))),
+        ))
     }
 
     test_inline!(
@@ -852,6 +946,101 @@ globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
 import { atom } from "jotai";
 
 export const one = globalThis.jotaiAtomCache.get("one", atom(1)), two = globalThis.jotaiAtomCache.get("two", atom(2));
+"#
+    );
+
+    // Test for Issue #21: 'use client' directive placement
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Anon)),
+        use_client_directive_placement,
+        r#"
+'use client';
+import { atom } from "jotai";
+const countAtom = atom(0);
+"#,
+        r#"
+'use client';
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+const countAtom = globalThis.jotaiAtomCache.get("countAtom", atom(0));
+"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Anon)),
+        use_strict_directive_placement,
+        r#"
+'use strict';
+import { atom } from "jotai";
+const countAtom = atom(0);
+"#,
+        r#"
+'use strict';
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+const countAtom = globalThis.jotaiAtomCache.get("countAtom", atom(0));
+"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Anon)),
+        multiple_directives_placement,
+        r#"
+'use strict';
+'use client';
+import { atom } from "jotai";
+const countAtom = atom(0);
+"#,
+        r#"
+'use strict';
+'use client';
+globalThis.jotaiAtomCache = globalThis.jotaiAtomCache || {
+  cache: new Map(),
+  get(name, inst) { 
+    if (this.cache.has(name)) {
+      return this.cache.get(name)
+    }
+    this.cache.set(name, inst)
+    return inst
+  },
+}
+import { atom } from "jotai";
+const countAtom = globalThis.jotaiAtomCache.get("countAtom", atom(0));
+"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Anon)),
+        use_client_without_imports,
+        r#"
+'use client';
+const countAtom = customAtom(0);
+"#,
+        r#"
+'use client';
+const countAtom = customAtom(0);
 "#
     );
 }

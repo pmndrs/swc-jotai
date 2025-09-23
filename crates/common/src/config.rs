@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
-use swc_core::ecma::atoms::JsWord;
+use swc_core::ecma::atoms::Atom;
 
 /// Static plugin configuration.
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
-    pub atom_names: Vec<JsWord>,
+    pub atom_names: Vec<Atom>,
 }
 
 pub fn parse_plugin_config(plugin_str: &str) -> Config {

@@ -5,9 +5,9 @@ use swc_core::{
     common::{util::take::Take, FileName, SyntaxContext, DUMMY_SP},
     ecma::{
         ast::*,
-        atoms::JsWord,
+        atoms::Atom,
         utils::{ModuleItemLike, StmtLike},
-        visit::{as_folder, noop_visit_mut_type, Fold, FoldWith, VisitMut, VisitMutWith},
+        visit::{noop_visit_mut_type, visit_mut_pass, VisitMut, VisitMutWith},
     },
     plugin::{
         metadata::TransformPluginMetadataContextKind, plugin_transform,
@@ -80,7 +80,7 @@ impl DebugLabelTransformVisitor {
                                     continue;
                                 }
 
-                                let atom_name: JsWord = match &self.file_name {
+                                let atom_name: Atom = match &self.file_name {
                                     FileName::Real(real_file_name) => {
                                         if let Some(file_stem) =
                                             real_file_name.file_stem().map(|s| s.to_string_lossy())
@@ -204,8 +204,8 @@ impl VisitMut for DebugLabelTransformVisitor {
     }
 }
 
-pub fn debug_label(config: Config, file_name: FileName) -> impl Fold {
-    as_folder(DebugLabelTransformVisitor::new(config, file_name))
+pub fn debug_label(config: Config, file_name: FileName) -> impl Pass {
+    visit_mut_pass(DebugLabelTransformVisitor::new(config, file_name))
 }
 
 #[plugin_transform]
@@ -222,7 +222,7 @@ pub fn debug_label_transform(
         Some(file_name) => FileName::Real(file_name.into()),
         None => FileName::Anon,
     };
-    program.fold_with(&mut as_folder(DebugLabelTransformVisitor::new(
+    program.apply(&mut visit_mut_pass(DebugLabelTransformVisitor::new(
         config, file_name,
     )))
 }
@@ -232,26 +232,17 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use swc_core::{
-        common::{chain, Mark},
-        ecma::{
-            parser::Syntax,
-            transforms::{
-                base::resolver,
-                testing::{test, test_inline},
-            },
-            visit::{as_folder, Fold},
-        },
+    use swc_core::ecma::{
+        parser::Syntax,
+        transforms::testing::{test, test_inline},
+        visit::visit_mut_pass,
     };
 
-    fn transform(config: Option<Config>, file_name: Option<FileName>) -> impl Fold {
-        chain!(
-            resolver(Mark::new(), Mark::new(), false),
-            as_folder(DebugLabelTransformVisitor::new(
-                config.unwrap_or_default(),
-                file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts")))
-            ))
-        )
+    fn transform(config: Option<Config>, file_name: Option<FileName>) -> impl Pass {
+        visit_mut_pass(DebugLabelTransformVisitor::new(
+            config.unwrap_or_default(),
+            file_name.unwrap_or(FileName::Real(PathBuf::from("atoms.ts"))),
+        ))
     }
 
     test_inline!(

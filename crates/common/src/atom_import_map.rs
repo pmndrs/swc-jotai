@@ -1,19 +1,17 @@
-use swc_core::{
-    common::collections::AHashSet,
-    ecma::{ast::*, atoms::JsWord},
-};
+use std::collections::HashSet;
+use swc_core::ecma::{ast::*, atoms::Atom};
 
 use crate::ATOM_IMPORTS;
 
 #[derive(Debug)]
 pub struct AtomImportMap {
-    atom_names: Vec<JsWord>,
-    imports: AHashSet<JsWord>,
-    namespace_imports: AHashSet<JsWord>,
+    atom_names: Vec<Atom>,
+    imports: HashSet<Atom>,
+    namespace_imports: HashSet<Atom>,
 }
 
 impl AtomImportMap {
-    pub fn new(atom_names: Vec<JsWord>) -> Self {
+    pub fn new(atom_names: Vec<Atom>) -> Self {
         AtomImportMap {
             atom_names,
             imports: Default::default(),
@@ -65,9 +63,7 @@ impl AtomImportMap {
                 ..
             }) => self.is_atom_import(e),
             // Handles: const countAtom = atom(0);
-            Expr::Ident(i) => {
-                self.atom_names.contains(&i.sym) || self.imports.get(&i.sym).is_some()
-            }
+            Expr::Ident(i) => self.atom_names.contains(&i.sym) || self.imports.contains(&i.sym),
             // Handles: const countAtom = jotai.atom(0);
             Expr::Member(MemberExpr {
                 obj,
@@ -75,7 +71,7 @@ impl AtomImportMap {
                 ..
             }) => {
                 if let Expr::Ident(obj) = &**obj {
-                    if self.namespace_imports.get(&obj.sym).is_some() {
+                    if self.namespace_imports.contains(&obj.sym) {
                         return ATOM_IMPORTS.contains(&&*prop.sym);
                     }
                 }
