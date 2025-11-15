@@ -44,7 +44,7 @@ jobs:
 
       - name: Build all WASM plugins
         run: |
-          # Build for wasm32-wasi target (standard for SWC plugins)
+          # Build both debug_label and react_refresh plugins for wasm32-wasi target (standard for SWC plugins)
           cargo build --target wasm32-wasi --release
 
       - name: Publish @swc-jotai/debug-label
