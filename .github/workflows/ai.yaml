@@ -65,6 +65,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            target/wasm32-wasi/release/*.wasm
+            target/wasm32-wasi/release/swc_jotai_debug_label.wasm
+            target/wasm32-wasi/release/swc_jotai_react_refresh.wasm
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
