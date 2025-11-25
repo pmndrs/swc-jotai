@@ -18,6 +18,6 @@
   },
   "main": "swc_jotai_react_refresh.wasm",
   "scripts": {
-    "prepack": "cargo prepublish --release && cp ../../target/wasm32-wasi/release/swc_jotai_react_refresh.wasm ."
+    "prepack": "cargo prepublish --release && cp ../../target/wasm32-wasip1/release/swc_jotai_react_refresh.wasm ."
   }
 }
