@@ -1,6 +1,6 @@
 {
   "name": "@swc-jotai/react-refresh",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "SWC plugin for supporting React Refresh with Jotai",
   "author": "Mathis Møller",
   "license": "MIT",
