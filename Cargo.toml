@@ -13,3 +13,4 @@ lto = true
 opt-level = "s"
 # Strip debug symbols
 strip = "symbols"
+
