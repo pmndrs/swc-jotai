@@ -15,9 +15,9 @@ jobs:
           node-version: 'lts/*'
           registry-url: 'https://registry.npmjs.org'
       - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          target: wasm32-wasip1
+          targets: wasm32-wasip1
       - name: Publish debug-label
         working-directory: ./crates/debug_label
         run: npm publish
