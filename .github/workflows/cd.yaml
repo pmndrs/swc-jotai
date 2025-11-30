@@ -21,10 +21,6 @@ jobs:
       - name: Publish debug-label
         working-directory: ./crates/debug_label
         run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Publish react-refresh
         working-directory: ./crates/react_refresh
         run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
