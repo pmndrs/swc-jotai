@@ -45,7 +45,8 @@ impl AtomImportMap {
                     }
                 }
                 ImportSpecifier::Namespace(..) => {
-                    self.namespace_imports.insert(import.src.value.clone());
+                    self.namespace_imports
+                        .insert(import.src.value.to_atom_lossy().into_owned());
                     continue;
                 }
                 _ => continue,

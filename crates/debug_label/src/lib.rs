@@ -31,7 +31,7 @@ fn create_debug_label_assign_expr(atom_name_id: Id) -> Expr {
             span: DUMMY_SP,
         })),
         right: Box::new(Expr::Lit(Lit::Str(Str {
-            value: atom_name,
+            value: atom_name.into(),
             span: DUMMY_SP,
             raw: None,
         }))),

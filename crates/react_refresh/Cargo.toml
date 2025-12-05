@@ -23,4 +23,7 @@ swc_core = { workspace = true, features = [
   "ecma_transforms_react",
   "testing_transform",
 ] }
-testing = "0.33.6"
+testing = { workspace = true }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(swc_ast_unknown)'] }
