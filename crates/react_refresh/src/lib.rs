@@ -68,7 +68,7 @@ fn show_prop_name(pn: &PropName) -> String {
     use PropName::*;
     match pn {
         Ident(ref i) => i.sym.to_string(),
-        Str(ref s) => s.value.to_string(),
+        Str(ref s) => s.value.to_string_lossy().to_string(),
         Num(ref n) => n
             .raw
             .as_ref()
@@ -142,8 +142,8 @@ impl VisitMut for ReactRefreshTransformVisitor {
                         match stmt {
                             Stmt::Expr(ExprStmt { expr, .. }) => {
                                 if let Expr::Lit(Lit::Str(str_lit)) = &**expr {
-                                    if str_lit.value.as_str() == "use client"
-                                        || str_lit.value.as_str() == "use strict"
+                                    if str_lit.value.as_str() == Some("use client")
+                                        || str_lit.value.as_str() == Some("use strict")
                                     {
                                         insert_pos = i + 1;
                                         continue;
@@ -200,8 +200,8 @@ impl VisitMut for ReactRefreshTransformVisitor {
                     ModuleItem::Stmt(Stmt::Expr(ExprStmt { expr, .. })) => {
                         // Check if this is a directive like 'use client' or 'use strict'
                         if let Expr::Lit(Lit::Str(str_lit)) = &**expr {
-                            if str_lit.value.as_str() == "use client"
-                                || str_lit.value.as_str() == "use strict"
+                            if str_lit.value.as_str() == Some("use client")
+                                || str_lit.value.as_str() == Some("use strict")
                             {
                                 insert_pos = i + 1;
                                 continue;
