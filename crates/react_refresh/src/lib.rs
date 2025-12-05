@@ -80,6 +80,8 @@ fn show_prop_name(pn: &PropName) -> String {
             .as_ref()
             .expect("BigInt(b).raw should be Some")
             .to_string(),
+        #[cfg(swc_ast_unknown)]
+        _ => panic!("unknown node"),
     }
 }
 
@@ -162,6 +164,8 @@ impl VisitMut for ReactRefreshTransformVisitor {
                     script.body.insert(insert_pos, jotai_cache_stmt);
                 }
             }
+            #[cfg(swc_ast_unknown)]
+            _ => panic!("unknown node"),
         }
     }
 
