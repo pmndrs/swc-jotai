@@ -4,6 +4,7 @@ members = ["crates/common", "crates/debug_label", "crates/react_refresh"]
 
 [workspace.dependencies]
 swc_core = "50.0.0"
+testing = "19.0.0"
 
 [profile.release]
 # This removes more dead code
