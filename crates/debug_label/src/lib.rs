@@ -22,8 +22,7 @@ struct DebugLabelTransformVisitor {
     file_name: FileName,
 }
 
-fn create_debug_label_assign_expr(atom_name_id: Id) -> Expr {
-    let atom_name = atom_name_id.0.clone();
+fn create_debug_label_assign_expr(atom_name_id: Id, debug_label: Atom) -> Expr {
     Expr::Assign(AssignExpr {
         left: AssignTarget::Simple(SimpleAssignTarget::Member(MemberExpr {
             obj: Box::new(Expr::Ident(atom_name_id.into())),
@@ -31,13 +30,34 @@ fn create_debug_label_assign_expr(atom_name_id: Id) -> Expr {
             span: DUMMY_SP,
         })),
         right: Box::new(Expr::Lit(Lit::Str(Str {
-            value: atom_name.into(),
+            value: debug_label.into(),
             span: DUMMY_SP,
             raw: None,
         }))),
         op: op!("="),
         span: DUMMY_SP,
     })
+}
+
+/// Turns a file stem like `user-atoms`, `2fa` or `class` into a valid
+/// binding name (`user_atoms`, `_2fa`, `_class`).
+fn to_binding_name(name: &str) -> Atom {
+    let mut binding = String::with_capacity(name.len() + 1);
+    for c in name.chars() {
+        binding.push(if Ident::is_valid_continue(c) { c } else { '_' });
+    }
+    if !binding.starts_with(Ident::is_valid_start) {
+        binding.insert(0, '_');
+    }
+
+    let binding: Atom = binding.into();
+    if binding.is_reserved()
+        || binding.is_reserved_in_strict_mode(true)
+        || binding.is_reserved_in_strict_bind()
+    {
+        return format!("_{binding}").into();
+    }
+    binding
 }
 
 impl DebugLabelTransformVisitor {
@@ -80,7 +100,7 @@ impl DebugLabelTransformVisitor {
                                     continue;
                                 }
 
-                                let atom_name: Atom = match &self.file_name {
+                                let debug_label: Atom = match &self.file_name {
                                     FileName::Real(real_file_name) => {
                                         if let Some(file_stem) =
                                             real_file_name.file_stem().map(|s| s.to_string_lossy())
@@ -98,6 +118,7 @@ impl DebugLabelTransformVisitor {
                                     }
                                     _ => "default_atom".into(),
                                 };
+                                let atom_name = to_binding_name(&debug_label);
 
                                 // Variable declaration
                                 stmts_updated.push(T::from(Stmt::Decl(Decl::Var(Box::new(
@@ -117,10 +138,10 @@ impl DebugLabelTransformVisitor {
                                 // Assign debug label
                                 stmts_updated.push(T::from(Stmt::Expr(ExprStmt {
                                     span: DUMMY_SP,
-                                    expr: Box::new(create_debug_label_assign_expr((
-                                        atom_name.clone(),
-                                        SyntaxContext::empty(),
-                                    ))),
+                                    expr: Box::new(create_debug_label_assign_expr(
+                                        (atom_name.clone(), SyntaxContext::empty()),
+                                        debug_label,
+                                    )),
                                 })));
                                 // export default expression
                                 stmts_updated.push(
@@ -190,7 +211,10 @@ impl VisitMut for DebugLabelTransformVisitor {
         let atom_name = self.current_var_declarator.as_ref().unwrap();
         if let Callee::Expr(expr) = &call_expr.callee {
             if self.atom_import_map.is_atom_import(expr) {
-                self.debug_label_expr = Some(create_debug_label_assign_expr(atom_name.clone()))
+                self.debug_label_expr = Some(create_debug_label_assign_expr(
+                    atom_name.clone(),
+                    atom_name.0.clone(),
+                ))
             }
         }
     }
@@ -413,6 +437,62 @@ import { atom } from "jotai";
 const countAtom = atom(0);
 countAtom.debugLabel = "countAtom";
 export default countAtom;"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Real("user-atoms.js".parse().unwrap()))),
+        invalid_identifier_file_name_default_export,
+        r#"
+import { atom } from "jotai";
+export default atom(0);"#,
+        r#"
+import { atom } from "jotai";
+const user_atoms = atom(0);
+user_atoms.debugLabel = "user-atoms";
+export default user_atoms;"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Real("src/2fa.ts".parse().unwrap()))),
+        leading_digit_file_name_default_export,
+        r#"
+import { atom } from "jotai";
+export default atom(0);"#,
+        r#"
+import { atom } from "jotai";
+const _2fa = atom(0);
+_2fa.debugLabel = "2fa";
+export default _2fa;"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Real("class.ts".parse().unwrap()))),
+        reserved_word_file_name_default_export,
+        r#"
+import { atom } from "jotai";
+export default atom(0);"#,
+        r#"
+import { atom } from "jotai";
+const _class = atom(0);
+_class.debugLabel = "class";
+export default _class;"#
+    );
+
+    test_inline!(
+        Syntax::default(),
+        |_| transform(None, Some(FileName::Real("user.atoms.ts".parse().unwrap()))),
+        dotted_file_name_default_export,
+        r#"
+import { atom } from "jotai";
+export default atom(0);"#,
+        r#"
+import { atom } from "jotai";
+const user_atoms = atom(0);
+user_atoms.debugLabel = "user.atoms";
+export default user_atoms;"#
     );
 
     test_inline!(
